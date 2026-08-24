@@ -1,4 +1,4 @@
-# Maintainer: RTR Tech Labs
+# Maintainer: Alexandru Iercosan-Lucaci <alex.lucaci@alacrity.ro>
 pkgname=kicad-component-importer-git
 _distname=component-importer-for-kicad
 pkgver=0.1.0
