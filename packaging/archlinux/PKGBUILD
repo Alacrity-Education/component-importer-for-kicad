@@ -34,4 +34,22 @@ package() {
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -Dm644 docs/CLI.md "${pkgdir}/usr/share/doc/${pkgname}/CLI.md"
+
+  install -Dm644 src/component_importer/gui_assets/app_icon.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/kicad-component-importer.svg"
+  install -Dm644 src/component_importer/gui_assets/app_icon.png \
+    "${pkgdir}/usr/share/icons/hicolor/1024x1024/apps/kicad-component-importer.png"
+
+  install -Dm644 /dev/stdin \
+    "${pkgdir}/usr/share/applications/kicad-component-importer.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=KiCad Component Importer
+Comment=Import component ZIP files into KiCad symbol and footprint libraries
+Exec=component-importer-for-kicad
+Icon=kicad-component-importer
+Categories=Development;Electronics;
+Terminal=false
+StartupNotify=true
+DESKTOP
 }
