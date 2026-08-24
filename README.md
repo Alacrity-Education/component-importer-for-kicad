@@ -217,31 +217,29 @@ Future components added to the same registered library normally do not require r
 ## Command line usage
 
 Prefer the terminal? The same import pipeline is available as a
-`kicad-importer` command — no window, no Qt, just a prompt. Set a project up
+`kicad-importer` command - no window, no Qt, just a command. Set a project up
 once, then import parts as you download them:
 
 ```bash
 # One-time setup, run anywhere inside the KiCad project
 kicad-importer init --library MyParts --downloads ~/Downloads
 
-# Import a specific downloaded ZIP...
+# Import a specific downloaded ZIP
 kicad-importer import ul_TPS631000DRLR.zip
 
-# ...or omit the filename to fuzzy-pick from your downloads (uses fzf if installed)
+# ... or omit the filename to fuzzy-pick from your downloads (uses fzf if installed)
 kicad-importer import
 
 # Grab every component ZIP in the current folder, then clean them up
 kicad-importer import --all --delete
 ```
 
-The CLI works from any subfolder of the project — it finds the project root
-by itself via the `.kicad-importer` settings file that `init` creates. Each
-import merges the symbol, copies footprints and 3D models, links everything
-together and registers the library, exactly like the desktop app.
+The CLI works from any subfolder of the project - it finds the project root
+by itself. Each import merges the symbol, copies footprints and 3D models,
+links everything together and registers the library, exactly like the desktop app.
 
 Read [docs/CLI.md](docs/CLI.md) for the full walkthrough, including how file
-searching works, what counts as an eligible ZIP for `--all`, and why
-`--delete` refuses to remove anything when an import fails.
+searching works and the available CLI flags.
 
 ## Automatic Downloads-folder importing
 
