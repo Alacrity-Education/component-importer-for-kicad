@@ -17,6 +17,10 @@ $PackageDir = Join-Path $SrcRoot "component_importer"
 $GuiAssetsDir = Join-Path $PackageDir "gui_assets"
 $AppIconPath = Join-Path $GuiAssetsDir "app_icon.ico"
 $EntryPoint = Join-Path $PackageDir "gui_main.pyw"
+$CliName = "kicad-importer"
+$CliEntryPoint = Join-Path $PackageDir "cli.py"
+$CliSourceDir = Join-Path $DistDir $CliName
+$CliBundleSubdir = "cli"
 
 if (-not (Test-Path -LiteralPath $InnoCompiler)) {
     throw "Inno Setup compiler not found: $InnoCompiler"
@@ -45,6 +49,33 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $SourceDir "$AppName.exe"))) {
         throw "PyInstaller build did not create $AppName.exe"
     }
+
+    # Second PyInstaller target: the Qt-free command line interface.
+    # PyQt6 is excluded so this binary stays small and never pulls in Qt.
+    python -m PyInstaller `
+        --noconfirm `
+        --clean `
+        --console `
+        --onedir `
+        --name $CliName `
+        --distpath $DistDir `
+        --workpath $BuildDir `
+        --specpath $SpecDir `
+        --paths $SrcRoot `
+        --exclude-module PyQt6 `
+        $CliEntryPoint
+
+    if (-not (Test-Path -LiteralPath (Join-Path $CliSourceDir "$CliName.exe"))) {
+        throw "PyInstaller build did not create $CliName.exe"
+    }
+
+    # Ship the CLI onedir as a subfolder of the GUI bundle so the installer
+    # (which recurses SourceDir) carries both the GUI and the CLI executable.
+    $CliDestDir = Join-Path $SourceDir $CliBundleSubdir
+    if (Test-Path -LiteralPath $CliDestDir) {
+        Remove-Item -LiteralPath $CliDestDir -Recurse -Force
+    }
+    Move-Item -LiteralPath $CliSourceDir -Destination $CliDestDir
 
     & $InnoCompiler `
         "/DSourceDir=$SourceDir" `

@@ -473,7 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="kicad-importer",
         description="Import KiCad component ZIP files from the command line.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command")
 
     init_parser = subparsers.add_parser(
         "init",
@@ -522,6 +522,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if not args.command:
+        parser.print_help()
+        return 2
 
     if args.command == "import" and args.all and args.file:
         parser.error("--all cannot be combined with a file argument")

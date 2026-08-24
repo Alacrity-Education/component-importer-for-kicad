@@ -20,6 +20,10 @@ PACKAGE_DIR="${SRC_ROOT}/component_importer"
 GUI_ASSETS_DIR="${PACKAGE_DIR}/gui_assets"
 APP_ICON_PATH="${GUI_ASSETS_DIR}/app_icon.png"
 ENTRY_POINT="${PACKAGE_DIR}/gui_main.py"
+CLI_NAME="kicad-importer"
+CLI_ENTRY_POINT="${PACKAGE_DIR}/cli.py"
+CLI_SOURCE_DIR="${DIST_DIR}/${CLI_NAME}"
+CLI_BUNDLE_SUBDIR="cli"
 ARCHIVE_PATH="${FINAL_ARTIFACT_ROOT}/${APP_NAME}-linux-${ARCH}.tar.gz"
 
 mkdir -p "${FINAL_ARTIFACT_ROOT}" "${SPEC_DIR}"
@@ -98,7 +102,45 @@ EOF
 
 chmod +x "${SOURCE_DIR}/install_desktop_entry.sh"
 
+# Second PyInstaller target: the Qt-free command line interface.
+# PyQt6 is excluded so this binary stays small and never pulls in Qt.
+"${PYTHON_BIN}" -m PyInstaller \
+    --noconfirm \
+    --clean \
+    --console \
+    --onedir \
+    --name "${CLI_NAME}" \
+    --distpath "${DIST_DIR}" \
+    --workpath "${BUILD_DIR}" \
+    --specpath "${SPEC_DIR}" \
+    --paths "${SRC_ROOT}" \
+    --exclude-module PyQt6 \
+    "${CLI_ENTRY_POINT}"
+
+if [[ ! -x "${CLI_SOURCE_DIR}/${CLI_NAME}" ]]; then
+    echo "PyInstaller build did not create ${CLI_SOURCE_DIR}/${CLI_NAME}" >&2
+    exit 1
+fi
+
+"${CLI_SOURCE_DIR}/${CLI_NAME}" --help >/dev/null
+
+# Ship the CLI onedir as a subfolder of the GUI bundle so a single tarball
+# carries both apps, and add a top-level wrapper next to run.sh.
+rm -rf "${SOURCE_DIR}/${CLI_BUNDLE_SUBDIR}"
+mv "${CLI_SOURCE_DIR}" "${SOURCE_DIR}/${CLI_BUNDLE_SUBDIR}"
+
+cat > "${SOURCE_DIR}/${CLI_NAME}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec "\${APP_DIR}/${CLI_BUNDLE_SUBDIR}/${CLI_NAME}" "\$@"
+EOF
+
+chmod +x "${SOURCE_DIR}/${CLI_NAME}"
+
 tar -C "${DIST_DIR}" -czf "${ARCHIVE_PATH}" "${APP_NAME}"
 
 echo "Built app folder: ${SOURCE_DIR}"
+echo "Built CLI: ${SOURCE_DIR}/${CLI_NAME} -> ${CLI_BUNDLE_SUBDIR}/${CLI_NAME}"
 echo "Built archive: ${ARCHIVE_PATH}"
