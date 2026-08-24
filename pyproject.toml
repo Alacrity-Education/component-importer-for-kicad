@@ -23,6 +23,7 @@ build = [
 
 [project.scripts]
 component-importer-for-kicad = "component_importer.gui_main:main"
+kicad-importer = "component_importer.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
