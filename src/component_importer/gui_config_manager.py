@@ -125,6 +125,9 @@ class GuiConfig:
     # Imported symbol text height/width in millimeters
     symbol_font_size_mm: float = 1.27
 
+    # Emit theme-adaptive (unset) stroke and background fill instead of colors
+    symbol_use_default_colors: bool = True
+
     # Keep one user-facing library name for both symbol and footprint libraries
     def __post_init__(self) -> None:
         shared_library_name = (
@@ -174,6 +177,9 @@ class GuiConfig:
             minimum=0.1,
             maximum=20.0,
         )
+        # Theme-adaptive colors are independent of the preset, so this flag is
+        # normalized here and deliberately left untouched by the preset override.
+        self.symbol_use_default_colors = bool(self.symbol_use_default_colors)
 
         if self.symbol_style_preset == "kicad_default":
             self.symbol_line_color = KICAD_DEFAULT_BODY_COLOR
@@ -343,6 +349,7 @@ def build_symbol_style_from_config(config: GuiConfig) -> SymbolStyle | None:
         fill_mode=config.symbol_fill_mode,
         fill_color=config.symbol_fill_color,
         font_size_mm=config.symbol_font_size_mm,
+        use_default_colors=config.symbol_use_default_colors,
     )
 
 

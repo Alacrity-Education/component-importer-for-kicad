@@ -335,6 +335,8 @@ class SymbolStyleTab(QWidget):
 
         self.apply_formatting_checkbox = QCheckBox("Apply formatting")
 
+        self.use_default_colors_checkbox = QCheckBox("Use default colors")
+
         self.symbol_style_preset_combo = QComboBox()
         self.symbol_style_preset_combo.addItem("KiCad default", "kicad_default")
         self.symbol_style_preset_combo.addItem("Custom", "custom")
@@ -365,12 +367,16 @@ class SymbolStyleTab(QWidget):
             self.symbol_font_size_spin,
         ]
 
+        self.symbol_line_color_label = QLabel("Body line color:")
+        self.symbol_fill_color_label = QLabel("Body fill color:")
+
         form_layout.addRow("", self.apply_formatting_checkbox)
         form_layout.addRow("Preset:", self.symbol_style_preset_combo)
         form_layout.addRow("Body line width:", self.symbol_line_width_spin)
-        form_layout.addRow("Body line color:", self.symbol_line_color_button)
-        form_layout.addRow("Body fill color:", self.symbol_fill_color_button)
         form_layout.addRow("Text size:", self.symbol_font_size_spin)
+        form_layout.addRow("", self.use_default_colors_checkbox)
+        form_layout.addRow(self.symbol_line_color_label, self.symbol_line_color_button)
+        form_layout.addRow(self.symbol_fill_color_label, self.symbol_fill_color_button)
 
         controls_layout.addLayout(form_layout)
         controls_layout.addStretch()
@@ -400,6 +406,7 @@ class SymbolStyleTab(QWidget):
         self.preview_update_timer.timeout.connect(self.update_preview_from_fields)
 
         self.apply_formatting_checkbox.stateChanged.connect(self.on_style_changed)
+        self.use_default_colors_checkbox.stateChanged.connect(self.on_style_changed)
         self.symbol_style_preset_combo.currentIndexChanged.connect(
             self.on_preset_changed
         )
@@ -415,6 +422,9 @@ class SymbolStyleTab(QWidget):
         self.loading_config = True
 
         self.apply_formatting_checkbox.setChecked(self.config.symbol_style_enabled)
+        self.use_default_colors_checkbox.setChecked(
+            self.config.symbol_use_default_colors
+        )
         self.set_symbol_style_preset(self.config.symbol_style_preset)
         self.symbol_line_width_spin.setValue(self.config.symbol_line_width_mm)
         self.set_symbol_line_color(self.config.symbol_line_color)
@@ -472,6 +482,17 @@ class SymbolStyleTab(QWidget):
         for control in self.formatting_controls:
             control.setEnabled(True)
 
+        # Gray out the color pickers when default (theme-adaptive) colors are used
+        color_controls_enabled = not self.use_default_colors_checkbox.isChecked()
+
+        for control in [
+            self.symbol_line_color_label,
+            self.symbol_line_color_button,
+            self.symbol_fill_color_label,
+            self.symbol_fill_color_button,
+        ]:
+            control.setEnabled(color_controls_enabled)
+
     # Set line color button state
     def set_symbol_line_color(self, color: str) -> None:
         self.symbol_line_color = normalize_hex_color(color)
@@ -481,6 +502,10 @@ class SymbolStyleTab(QWidget):
             "QPushButton { "
             f"background-color: {self.symbol_line_color}; "
             f"color: {text_color}; "
+            "} "
+            "QPushButton:disabled { "
+            "background-color: #d4d4d4; "
+            "color: #8a8a8a; "
             "}"
         )
 
@@ -496,6 +521,10 @@ class SymbolStyleTab(QWidget):
             "QPushButton { "
             f"background-color: {self.symbol_fill_color}; "
             f"color: {text_color}; "
+            "} "
+            "QPushButton:disabled { "
+            "background-color: #d4d4d4; "
+            "color: #8a8a8a; "
             "}"
         )
 
@@ -594,6 +623,7 @@ class SymbolStyleTab(QWidget):
             symbol_fill_mode=symbol_fill_mode,
             symbol_fill_color=symbol_fill_color,
             symbol_font_size_mm=self.symbol_font_size_spin.value(),
+            symbol_use_default_colors=self.use_default_colors_checkbox.isChecked(),
         )
 
     # Update preview without saving

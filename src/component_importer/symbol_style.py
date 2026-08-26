@@ -58,6 +58,7 @@ class SymbolStyle:
     fill_color: str = KICAD_DEFAULT_FILL_COLOR
     font_size_mm: float = 1.27
     pin_length_mm: float = KICAD_DEFAULT_PIN_LENGTH_MM
+    use_default_colors: bool = True
 
 
 def format_kicad_number(value: float) -> str:
@@ -179,6 +180,7 @@ def normalize_symbol_style(style: SymbolStyle | dict | None) -> SymbolStyle | No
             minimum=0.0,
             maximum=20.0,
         ),
+        use_default_colors=bool(data.get("use_default_colors", True)),
     )
 
 
@@ -190,6 +192,7 @@ def symbol_style_to_dict(style: SymbolStyle) -> dict:
         "fill_color": style.fill_color,
         "font_size_mm": style.font_size_mm,
         "pin_length_mm": style.pin_length_mm,
+        "use_default_colors": style.use_default_colors,
     }
 
 
@@ -264,17 +267,27 @@ def build_stroke_block(style: SymbolStyle, old_stroke_block: str) -> str:
         child_name="type",
         fallback="default",
     )
-    red, green, blue = hex_color_to_rgb(style.line_color)
+
+    if style.use_default_colors:
+        # Alpha 0 means "unset", so KiCad renders the theme's own stroke color.
+        color = "0 0 0 0"
+    else:
+        red, green, blue = hex_color_to_rgb(style.line_color)
+        color = f"{red} {green} {blue} 1"
 
     return (
         f"(stroke (width {format_kicad_number(style.line_width_mm)}) "
         f"(type {stroke_type}) "
-        f"(color {red} {green} {blue} 1))"
+        f"(color {color}))"
     )
 
 
 def build_fill_block(style: SymbolStyle) -> str:
     if style.fill_mode in {"kicad_default", "color"}:
+        if style.use_default_colors:
+            # Let the body fill follow the KiCad theme background color.
+            return "(fill (type background))"
+
         fill_color = style.fill_color
 
         if style.fill_mode == "kicad_default":
