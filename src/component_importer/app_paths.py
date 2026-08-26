@@ -112,6 +112,11 @@ def source_root_dir() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+# Return True when running from a source checkout of the repository
+def is_source_checkout() -> bool:
+    return (source_root_dir() / "pyproject.toml").is_file()
+
+
 # Get a per-user writable app data folder
 def user_data_dir() -> Path:
     if is_windows():
@@ -266,4 +271,9 @@ def gui_config_file_path() -> Path:
         return user_data_dir() / "gui_config.json"
 
     # Source runs keep the development config at the repository root
-    return source_root_dir() / "gui_config.json"
+    if is_source_checkout():
+        return source_root_dir() / "gui_config.json"
+
+    # Package installs (pip, distro packages) live under site-packages,
+    # which is not writable; use the per-user config folder instead
+    return user_data_dir() / "gui_config.json"
