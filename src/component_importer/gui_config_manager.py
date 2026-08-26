@@ -126,7 +126,7 @@ class GuiConfig:
     symbol_font_size_mm: float = 1.27
 
     # Emit theme-adaptive (unset) stroke and background fill instead of colors
-    symbol_use_default_colors: bool = False
+    symbol_use_default_colors: bool = True
 
     # Keep one user-facing library name for both symbol and footprint libraries
     def __post_init__(self) -> None:

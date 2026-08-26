@@ -19,6 +19,7 @@ from component_importer.import_validator import (
     validate_imported_part,
 )
 from component_importer.models import AssetType
+from component_importer.symbol_style import SymbolStyle
 from component_importer.zip_inspector import inspect_zip_contents
 
 
@@ -253,7 +254,14 @@ def attempt_import(
 
     try:
         part_name = infer_part_name_from_zip(zip_path)
-        result = import_cad_zip(zip_path, project_root, library, part_name)
+        result = import_cad_zip(
+            zip_path,
+            project_root,
+            library,
+            part_name,
+            # Default KiCad-style formatting with theme-adaptive colors
+            symbol_style=SymbolStyle(),
+        )
     except Exception as exc:
         if debug:
             traceback.print_exc()

@@ -58,7 +58,7 @@ class SymbolStyle:
     fill_color: str = KICAD_DEFAULT_FILL_COLOR
     font_size_mm: float = 1.27
     pin_length_mm: float = KICAD_DEFAULT_PIN_LENGTH_MM
-    use_default_colors: bool = False
+    use_default_colors: bool = True
 
 
 def format_kicad_number(value: float) -> str:
@@ -180,7 +180,7 @@ def normalize_symbol_style(style: SymbolStyle | dict | None) -> SymbolStyle | No
             minimum=0.0,
             maximum=20.0,
         ),
-        use_default_colors=bool(data.get("use_default_colors", False)),
+        use_default_colors=bool(data.get("use_default_colors", True)),
     )
 
 

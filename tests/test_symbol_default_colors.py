@@ -47,13 +47,13 @@ class SymbolStyleRoundTripTest(unittest.TestCase):
         restored = normalize_symbol_style(data)
         self.assertTrue(restored.use_default_colors)
 
-    def test_default_flag_is_false(self):
-        self.assertFalse(SymbolStyle().use_default_colors)
-        self.assertFalse(symbol_style_to_dict(SymbolStyle())["use_default_colors"])
+    def test_default_flag_is_true(self):
+        self.assertTrue(SymbolStyle().use_default_colors)
+        self.assertTrue(symbol_style_to_dict(SymbolStyle())["use_default_colors"])
 
     def test_normalize_defaults_flag_when_absent(self):
         restored = normalize_symbol_style({"line_width_mm": 0.3})
-        self.assertFalse(restored.use_default_colors)
+        self.assertTrue(restored.use_default_colors)
 
 
 class StylerOutputTest(unittest.TestCase):
@@ -99,8 +99,8 @@ class StylerOutputTest(unittest.TestCase):
 
 
 class GuiConfigDefaultColorsTest(unittest.TestCase):
-    def test_field_defaults_false(self):
-        self.assertFalse(GuiConfig().symbol_use_default_colors)
+    def test_field_defaults_true(self):
+        self.assertTrue(GuiConfig().symbol_use_default_colors)
 
     def test_flag_survives_kicad_default_preset_override(self):
         config = GuiConfig(
@@ -119,7 +119,7 @@ class GuiConfigDefaultColorsTest(unittest.TestCase):
         self.assertTrue(style.use_default_colors)
 
     def test_migration_from_old_config_without_field(self):
-        # Old configs never wrote this key; it must default to False
+        # Old configs never wrote this key; default-colors is now opt-out
         old_data = {
             "library_name": "MyParts",
             "symbol_style_enabled": True,
@@ -127,7 +127,7 @@ class GuiConfigDefaultColorsTest(unittest.TestCase):
             "symbol_line_color": "#123456",
         }
         config = config_from_dict(old_data)
-        self.assertFalse(config.symbol_use_default_colors)
+        self.assertTrue(config.symbol_use_default_colors)
 
     def test_persistence_round_trip(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
