@@ -51,7 +51,7 @@ downloads = /home/you/Downloads
   files around.
 
 You can also change individual settings usingthe CLI. Just run `init` again with only the flag
-you want to change — everything else is left alone:
+you want to change - everything else is left alone:
 
 ```bash
 kicad-importer init --downloads ~/parts-inbox   # library name stays as-is

@@ -245,6 +245,16 @@
         font-weight: 700;
       }
 
+      .download-panel-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .download-panel-buttons .primary {
+        grid-column: 1 / -1;
+      }
+
       .download-panel {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -259,7 +269,7 @@
 
       .download-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 16px;
         margin-top: 28px;
       }
@@ -384,13 +394,18 @@
       <section id="download">
         <div class="download-panel">
           <div>
-            <h2>Windows installer and Linux bundle</h2>
+            <h2>Windows installer, Linux bundle and AUR package</h2>
             <p class="muted">
-              Download the latest Windows installer, or build the Linux bundle from source for
-              Ubuntu, Zorin OS, Pop!_OS, and close Ubuntu-based distributions.
+              Download the latest Windows installer, build the Linux bundle from source for
+              Ubuntu, Zorin OS, Pop!_OS, and close Ubuntu-based distributions, or install the
+              AUR package on Arch Linux.
             </p>
           </div>
-          <a class="button primary" href="https://github.com/robertxdx/component-importer-for-kicad/releases/latest/download/KiCadComponentImporter_Setup.exe">Download Windows installer</a>
+          <div class="download-panel-buttons">
+            <a class="button primary" href="https://github.com/robertxdx/component-importer-for-kicad/releases/latest/download/KiCadComponentImporter_Setup.exe">Download Windows installer</a>
+            <a class="button" href="https://github.com/robertxdx/component-importer-for-kicad/releases/latest/download/KiCadComponentImporter-linux-x86_64.tar.gz">Ubuntu Linux</a>
+            <a class="button" href="https://aur.archlinux.org/packages/kicad-component-importer-git">Arch Linux</a>
+          </div>
         </div>
       </section>
 
@@ -488,7 +503,7 @@
             </div>
           </article>
           <article class="download-card">
-            <h3>Linux</h3>
+            <h3>Ubuntu Linux</h3>
             <p class="muted">
               Use the Linux bundle on Ubuntu, Zorin OS, Pop!_OS, and close Ubuntu-based distributions.
             </p>
@@ -496,6 +511,17 @@
               <a class="button primary" href="https://github.com/robertxdx/component-importer-for-kicad/releases/latest/download/KiCadComponentImporter-linux-x86_64.tar.gz">Download bundle</a>
               <a class="button" href="https://github.com/robertxdx/component-importer-for-kicad/releases/latest">Latest release</a>
               <a class="button" href="INSTALL.md#linux-bundle">Install guide</a>
+            </div>
+          </article>
+          <article class="download-card">
+            <h3>Arch Linux</h3>
+            <p class="muted">
+              Install the AUR package with an AUR helper, e.g.<br>
+              <code>paru -S kicad-component-importer-git</code>
+            </p>
+            <div class="actions">
+              <a class="button primary" href="https://aur.archlinux.org/packages/kicad-component-importer-git">AUR package</a>
+              <a class="button" href="INSTALL.md#arch-linux-aur">Install guide</a>
             </div>
           </article>
         </div>
