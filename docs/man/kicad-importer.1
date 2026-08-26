@@ -1,0 +1,187 @@
+.TH KICAD-IMPORTER 1 "2026-08-26" "kicad-importer" "User Commands"
+.SH NAME
+kicad-importer \- import component ZIP files into KiCad project libraries
+.SH SYNOPSIS
+.B kicad-importer
+.I command
+.RI [ options ]
+.br
+.B kicad-importer init
+.RB [ \-\-library
+.IR NAME ]
+.RB [ \-\-downloads
+.IR PATH ]
+.br
+.B kicad-importer import
+.RI [ FILE ]
+.RB [ \-\-all ]
+.RB [ \-\-delete ]
+.RB [ \-\-debug ]
+.SH DESCRIPTION
+.B kicad-importer
+imports downloaded electronic component ZIP archives (SnapMagic/SnapEDA,
+ComponentSearchEngine/SamacSys, Ultra Librarian and similar services) into a
+KiCad project library from the command line.
+It drives the same import pipeline as the KiCad Component Importer desktop
+application: symbols are merged into the project symbol library, footprints
+and 3D models are copied into organized library folders, symbols are linked
+to their footprints, 3D model paths are repaired using
+.B ${KIPRJMOD}
+so the project stays portable, and the libraries are registered in the
+project's
+.I sym-lib-table
+and
+.IR fp-lib-table .
+A copy of each imported ZIP is kept in the project's
+.I source_zips
+folder and every import is validated.
+.PP
+The tool can be run from the project root or any of its subfolders: it walks
+up the directory tree until it finds the
+.I .kicad-importer
+configuration file and treats that folder as the project root.
+.SH COMMANDS
+.SS init
+Create or update the
+.I .kicad-importer
+configuration file.
+When no configuration exists yet, it is created in the nearest ancestor
+directory (including the current directory) containing a
+.I *.kicad_pro
+file.
+The command is re-runnable: only the flags passed on the current invocation
+are changed, other settings are kept.
+The first run requires
+.BR \-\-library .
+.TP
+.BI \-\-library " NAME"
+Name of the project library that components are imported into.
+The importer creates
+.IB libraries/ NAME .kicad_sym
+and
+.IB libraries/ NAME .pretty
+under the project root and registers them in the project library tables.
+.TP
+.BI \-\-downloads " PATH"
+Optional downloads folder that
+.B import
+searches in addition to the current directory.
+A leading
+.B ~
+is expanded and the path is stored absolute.
+A warning is printed if the folder does not exist.
+.SS import
+Import one or more component ZIP archives into the configured project
+library.
+Requires a discovered
+.I .kicad-importer
+file with a configured library.
+.TP
+.I FILE
+ZIP file to import, given as a path or a bare filename.
+A bare filename is looked for first in the current directory, then in the
+configured downloads folder.
+When the argument is omitted, all ZIP files from both locations are
+aggregated and presented in a fuzzy picker:
+.BR fzf (1)
+when installed, otherwise a built-in numbered picker that filters by
+substring.
+Cancelling the picker exits without importing.
+.TP
+.BR \-\-all ", " \-a
+Import every eligible ZIP in the current directory.
+A first pass inspects each archive and skips files that contain no KiCad
+symbol library or footprint assets.
+Each candidate is then imported with a per-file OK or FAILED line and a
+final summary.
+Cannot be combined with a
+.I FILE
+argument.
+.TP
+.BR \-\-delete ", " \-d
+Delete each ZIP after it was imported successfully.
+Components that are already present in the library count as successfully
+imported.
+With
+.BR \-\-all ,
+the delete phase is skipped entirely when any import failed.
+.TP
+.B \-\-debug
+Print full Python tracebacks for unexpected errors instead of one-line
+messages.
+.SH CONFIGURATION
+Settings are stored per project in
+.IR .kicad-importer ,
+a small INI file in the project root:
+.PP
+.RS
+.nf
+[kicad-importer]
+library = MyBoard_Parts
+downloads = /home/you/Downloads
+.fi
+.RE
+.PP
+The file can be edited by hand or updated by re-running
+.BR "kicad-importer init" .
+.SH FILES
+.TP
+.I .kicad-importer
+Per-project configuration file, located in the KiCad project root.
+.TP
+.I libraries/
+Created under the project root; holds the symbol library, the
+.I .pretty
+footprint library, 3D models, source ZIP copies, metadata and backups.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including a cancelled picker and components skipped as already
+imported.
+.TP
+.B 1
+An error occurred: file not found, missing configuration, or at least one
+import failed.
+.TP
+.B 2
+Invalid usage, or no command given.
+.SH EXAMPLES
+Configure a project once, from anywhere inside it:
+.PP
+.RS
+.nf
+kicad-importer init --library MyBoard_Parts --downloads ~/Downloads
+.fi
+.RE
+.PP
+Import a specific downloaded archive:
+.PP
+.RS
+.nf
+kicad-importer import ul_TPS631000DRLR.zip
+.fi
+.RE
+.PP
+Pick an archive interactively:
+.PP
+.RS
+.nf
+kicad-importer import
+.fi
+.RE
+.PP
+Import every component ZIP in the current folder and clean up:
+.PP
+.RS
+.nf
+kicad-importer import --all --delete
+.fi
+.RE
+.SH SEE ALSO
+.BR fzf (1)
+.PP
+Full documentation and the desktop application:
+.UR https://github.com/robertxdx/component-importer-for-kicad
+.UE
+.SH LICENSE
+MIT License.
