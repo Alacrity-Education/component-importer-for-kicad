@@ -1,0 +1,73 @@
+name: Build and Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-linux-bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-cursor0 \
+            libxcb-xinerama0 \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            libgl1
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[build]"
+
+      - name: Build the Linux bundle
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: bash packaging/build_linux_bundle.sh
+
+      - name: Upload bundle to release
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            release_builds/*/KiCadComponentImporter-linux-x86_64.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[build]"
+
+      - name: Build the Windows installer
+        run: pwsh -File packaging/build_windows_installer.ps1
+
+      - name: Upload installer to release
+        shell: bash
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            release_builds/*/KiCadComponentImporter_Setup.exe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
