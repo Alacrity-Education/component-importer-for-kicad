@@ -136,6 +136,33 @@ class CliTest(unittest.TestCase):
             self.assertTrue((root / "sym-lib-table").exists())
             self.assertTrue((root / "fp-lib-table").exists())
 
+    def test_import_produces_theme_adaptive_symbols(self):
+        # The CLI passes no symbol style, so imported symbols must keep the
+        # vendor ZIP's theme-adaptive stroke/fill and never gain hardcoded colors
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+            root = Path(temp_dir).resolve()
+            self.make_project(root)
+            self.create_component_zip(root / "part.zip")
+
+            with chdir(root):
+                cli.main(["init", "--library", "MyParts"])
+                code = cli.main(["import", "part.zip"])
+
+            self.assertEqual(code, 0)
+            symbol_text = (root / "libraries" / "MyParts.kicad_sym").read_text(
+                encoding="utf-8"
+            )
+            # No hardcoded default line/fill colors
+            self.assertNotIn("(color 132 0 0 1)", symbol_text)
+            self.assertNotIn("(color 255 255 194 1)", symbol_text)
+            # No opaque hardcoded stroke/fill color of any kind
+            import re
+
+            self.assertNotRegex(symbol_text, r"\(color \d+ \d+ \d+ 1\)")
+            # Fills stay theme-adaptive
+            for fill in re.findall(r"\(fill \(type (\w+)\)", symbol_text):
+                self.assertIn(fill, {"none", "background"})
+
     def test_import_missing_filename_errors(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
             root = Path(temp_dir).resolve()
