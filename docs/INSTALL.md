@@ -1,6 +1,6 @@
 # Installation Guide
 
-Component Importer for KiCad currently supports Windows and Ubuntu-based Linux distributions.
+Component Importer for KiCad currently supports Windows, Ubuntu-based Linux distributions and Arch Linux.
 
 ## Windows
 
@@ -45,6 +45,28 @@ cd KiCadComponentImporter
 
 After that, search for **KiCad Component Importer** in your app launcher. The login startup option opens the app minimized to the tray when a system tray is available.
 
+## Arch Linux (AUR)
+
+The application is packaged for Arch Linux as
+[`kicad-component-importer-git`](https://aur.archlinux.org/packages/kicad-component-importer-git),
+which builds the latest state of the main branch.
+
+Install it with an AUR helper such as [paru](https://github.com/Morganamilo/paru):
+
+```bash
+paru -S kicad-component-importer-git
+```
+
+Or build it manually with makepkg:
+
+```bash
+git clone https://aur.archlinux.org/kicad-component-importer-git.git
+cd kicad-component-importer-git
+makepkg -si
+```
+
+Since it is a VCS package, `paru -Syu --devel` rebuilds it when new commits land on the main branch.
+
 ## Linux Source Install
 
 Use this path when testing from the repository.
@@ -52,8 +74,12 @@ Use this path when testing from the repository.
 1. Install basic tools:
 
 ```bash
+# Ubuntu-based (includes the Qt/XCB runtime libraries PyQt6 needs)
 sudo apt update
-sudo apt install git python3 python3-venv python3-pip
+sudo apt install git python3 python3-venv python3-pip libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libegl1 libgl1
+
+# Arch
+sudo pacman -S --needed git python python-pip libxcb xcb-util-cursor libxkbcommon-x11 mesa
 ```
 
 2. Create and activate a virtual environment:
@@ -74,12 +100,6 @@ python -m pip install -e ".[build]"
 
 ```bash
 python -m component_importer.gui_main
-```
-
-If Qt reports that the `xcb` platform plugin could not be loaded, install the common Qt/XCB runtime libraries:
-
-```bash
-sudo apt install libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libegl1 libgl1
 ```
 
 ## Build The Linux Bundle

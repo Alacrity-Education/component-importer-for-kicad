@@ -7,6 +7,8 @@ The first Linux target family is Ubuntu and Ubuntu-based desktops:
 - Pop!_OS
 - Linux Mint and other close Ubuntu derivatives should usually work too
 
+Arch Linux is supported through an AUR package instead of the bundle.
+
 ## Recommended Release Strategy
 
 Start with a `.tar.gz` PyInstaller bundle built on the oldest Ubuntu LTS version you want to support. A bundle built on an older supported Ubuntu is more likely to run on newer Ubuntu-derived systems than the other way around.
@@ -42,6 +44,32 @@ If Qt reports that the `xcb` platform plugin could not be loaded, install the co
 ```bash
 sudo apt install libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libegl1 libgl1
 ```
+
+## Arch Linux
+
+On Arch Linux and derivatives, install the
+[`kicad-component-importer-git`](https://aur.archlinux.org/packages/kicad-component-importer-git)
+AUR package instead of the PyInstaller bundle. It builds from the latest main
+branch and installs the desktop application, the `kicad-importer` command
+line tool, a desktop launcher and the application icons. Dependencies are
+handled by pacman, so none of the Ubuntu bundle steps apply.
+
+With an AUR helper such as paru:
+
+```bash
+paru -S kicad-component-importer-git
+```
+
+Or manually with makepkg:
+
+```bash
+git clone https://aur.archlinux.org/kicad-component-importer-git.git
+cd kicad-component-importer-git
+makepkg -si
+```
+
+Since this is a VCS package, rebuild it with `paru -Syu --devel` to pick up new
+commits. See the [installation guide](INSTALL.md) for details.
 
 ## Build The Linux Bundle
 

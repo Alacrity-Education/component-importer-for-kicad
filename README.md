@@ -5,7 +5,8 @@ Import downloaded electronic component ZIP files into organized KiCad symbol and
 [![Latest Release](https://img.shields.io/github/v/release/robertxdx/component-importer-for-kicad)](https://github.com/robertxdx/component-importer-for-kicad/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-supported-0078D6)](docs/INSTALL.md)
-[![Linux](https://img.shields.io/badge/Linux-Ubuntu--based-FCC624)](docs/LINUX.md)
+[![Linux](https://img.shields.io/badge/Linux-Ubuntu_%26_Arch-FCC624)](docs/LINUX.md)
+[![AUR](https://img.shields.io/aur/version/kicad-component-importer-git?label=Archlinux%20%7C%20AUR&logo=archlinux)](https://aur.archlinux.org/packages/kicad-component-importer-git)
 
 <p align="center">
   <img
@@ -104,7 +105,7 @@ The external library folder contains the actual component files. The KiCad globa
 - Continue running from the system tray
 - Create backups before modifying library files
 - Validate symbols, footprints, models and library registration
-- Support Windows and Ubuntu-based Linux distributions
+- Support Windows, Ubuntu-based Linux distributions and Arch Linux
 
 ## Supported files
 
@@ -152,7 +153,17 @@ Download and run:
 
 The installer creates an application shortcut and can optionally configure startup on login.
 
-### Linux x86_64
+### Arch Linux
+
+Install the [`kicad-component-importer-git`](https://aur.archlinux.org/packages/kicad-component-importer-git) AUR package with an AUR helper:
+
+```bash
+paru -S kicad-component-importer-git
+```
+
+The package installs the desktop application, the `kicad-importer` command line tool and a desktop launcher. See the [installation guide](docs/INSTALL.md#arch-linux-aur) for building it manually with makepkg.
+
+### Ubuntu Linux 
 
 Download:
 
