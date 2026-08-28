@@ -245,19 +245,72 @@ def compute_geometry(state: EditorState, pin_length: float) -> dict:
     v_extent = max((abs(y) for y in left_ys + right_ys), default=0.0)
     h_extent = max((abs(x) for x in top_xs + bottom_xs), default=0.0)
 
-    name_width = (
-        _max_real_name_chars(left) + _max_real_name_chars(right)
-    ) * CHAR_WIDTH_MM + NAME_ZONE_GAP_MM
-    name_height = (
-        _max_real_name_chars(top) + _max_real_name_chars(bottom)
-    ) * CHAR_WIDTH_MM + NAME_ZONE_GAP_MM
+    max_left = _max_real_name_chars(left)
+    max_right = _max_real_name_chars(right)
+    max_top = _max_real_name_chars(top)
+    max_bottom = _max_real_name_chars(bottom)
+
+    name_width = (max_left + max_right) * CHAR_WIDTH_MM + NAME_ZONE_GAP_MM
+    name_height = (max_top + max_bottom) * CHAR_WIDTH_MM + NAME_ZONE_GAP_MM
 
     half_w = ceil_to_grid(
         max(h_extent + PIN_EDGE_MARGIN_MM, name_width / 2, MIN_BODY_HALF_MM),
         GRID_MM,
     )
+
+    # Cross-side interference term (prevents top/bottom vertical names from
+    # colliding with left/right horizontal names).
+    #
+    # Left/right names are drawn horizontally along their pin rows, starting at
+    # the body edge and reaching inward. In final x-space their bounding bands are
+    #   left  : [-half_w,           -half_w + max_left * CHAR_WIDTH_MM]
+    #   right : [ half_w - max_right * CHAR_WIDTH_MM,  half_w]
+    # Top/bottom names are drawn vertically in their pin's column (about one glyph
+    # wide) descending from the top edge / rising from the bottom edge. If such a
+    # column falls inside a left/right name band AND the vertical name is long
+    # enough to reach that name's row, their boxes intersect. The simple
+    # name_height rule only separates top-from-bottom, never top/bottom from
+    # left/right, so we add an explicit VERTICAL separation: whenever a top (or
+    # bottom) name column overlaps a left/right name band, the body height must be
+    # large enough that the top name band stays a clear gap above the highest
+    # named left/right row (and the bottom band a clear gap below the lowest).
+    half_char = CHAR_WIDTH_MM / 2.0
+    left_band_right = -half_w + max_left * CHAR_WIDTH_MM
+    right_band_left = half_w - max_right * CHAR_WIDTH_MM
+
+    def _column_overlaps_lr_name(x: float) -> bool:
+        return (x - half_char < left_band_right) or (x + half_char > right_band_left)
+
+    lr_named_ys = [
+        abs(y)
+        for slots, ys in ((left, left_ys), (right, right_ys))
+        for slot, y in zip(slots, ys)
+        if not slot.is_blank and slot.name
+    ]
+    has_lr_named = bool(lr_named_ys)
+    v_named = max(lr_named_ys, default=0.0)
+
+    top_cols = [x for slot, x in zip(top, top_xs) if not slot.is_blank and slot.name]
+    bottom_cols = [
+        x for slot, x in zip(bottom, bottom_xs) if not slot.is_blank and slot.name
+    ]
+
+    cross_half_h = 0.0
+
+    if has_lr_named and any(_column_overlaps_lr_name(x) for x in top_cols):
+        cross_half_h = max(
+            cross_half_h,
+            v_named + half_char + NAME_ZONE_GAP_MM + max_top * CHAR_WIDTH_MM,
+        )
+
+    if has_lr_named and any(_column_overlaps_lr_name(x) for x in bottom_cols):
+        cross_half_h = max(
+            cross_half_h,
+            v_named + half_char + NAME_ZONE_GAP_MM + max_bottom * CHAR_WIDTH_MM,
+        )
+
     half_h = ceil_to_grid(
-        max(v_extent + PIN_EDGE_MARGIN_MM, name_height / 2, MIN_BODY_HALF_MM),
+        max(v_extent + PIN_EDGE_MARGIN_MM, name_height / 2, MIN_BODY_HALF_MM, cross_half_h),
         GRID_MM,
     )
 
