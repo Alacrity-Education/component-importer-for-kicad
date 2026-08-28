@@ -90,7 +90,7 @@ class ImportComponentWorker(QObject):
     failed = pyqtSignal(str)
 
     # Create worker
-    def __init__(self, zip_path: str, part_name: str, config):
+    def __init__(self, zip_path: str, part_name: str, config, formatting_strategy=None):
         # Initialize QObject
         super().__init__()
 
@@ -102,6 +102,11 @@ class ImportComponentWorker(QObject):
 
         # Store GUI config
         self.config = config
+
+        # Optional pre-decided formatting strategy (e.g. an interactive pin
+        # layout resolved on the GUI thread). When set it overrides the classic
+        # symbol_style; when None the classic style from config is used.
+        self.formatting_strategy = formatting_strategy
 
     # Run import operation
     def run(self) -> None:
@@ -121,6 +126,7 @@ class ImportComponentWorker(QObject):
                 create_backups=True,
                 skip_existing_components=True,
                 symbol_style=build_symbol_style_from_config(self.config),
+                formatting_strategy=self.formatting_strategy,
             )
 
             # Existing components are intentionally skipped to avoid duplicates
@@ -168,6 +174,7 @@ class ImportComponentWorker(QObject):
                     create_backups=True,
                     skip_existing_components=True,
                     symbol_style=build_symbol_style_from_config(self.config),
+                    formatting_strategy=self.formatting_strategy,
                     update_library_tables=False,
                     library_layout="external",
                 )

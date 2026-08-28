@@ -19,9 +19,11 @@ from pathlib import Path
 
 from component_importer.formatting_strategy import SymbolFormattingStrategy
 from component_importer.interactive_editor import (
+    ALL_SIDES,
     EditorState,
     Slot,
     TerminalRenderer,
+    make_blank,
     run_editor,
 )
 from component_importer.key_source import KeySource, TerminalKeySource
@@ -432,6 +434,172 @@ def regenerate_symbol_block(
 
 
 # ---------------------------------------------------------------------------
+# Layout transfer (decide-once, apply-anywhere)
+# ---------------------------------------------------------------------------
+#
+# A "layout" is a Qt-free, JSON-friendly snapshot of an EditorState that records
+# only the *decision*: for each side, the ordered sequence of blanks and real
+# pins (real pins referenced by their identity, not their source text). This lets
+# a layout decided against one extraction of a symbol (for example the pins read
+# from a ZIP before it is merged) be replayed against another extraction of the
+# same symbol (the merged library file), so regeneration always operates on the
+# merged pin blocks exactly as InteractiveReconstructionStrategy does.
+
+
+# Stable identity key for a real pin slot: its number, else its name
+def _slot_identity(slot: Slot) -> tuple:
+    if slot.number:
+        return ("number", slot.number)
+
+    return ("name", slot.name)
+
+
+# Snapshot an EditorState into a plain layout dict
+def layout_from_state(state: EditorState) -> dict:
+    layout = {}
+
+    for side in ALL_SIDES:
+        entries = []
+
+        for slot in state.sides[side]:
+            if slot.is_blank:
+                entries.append({"blank": True})
+            else:
+                entries.append(
+                    {
+                        "blank": False,
+                        "number": slot.number,
+                        "name": slot.name,
+                    }
+                )
+
+        layout[side] = entries
+
+    return layout
+
+
+# Identity key for a layout entry, mirroring _slot_identity
+def _entry_identity(entry: dict) -> tuple:
+    if entry.get("number"):
+        return ("number", entry["number"])
+
+    return ("name", entry.get("name", ""))
+
+
+# Rebuild an EditorState by replaying a layout against a freshly extracted symbol.
+#
+# Real pins are taken from the symbol block (so their verbatim source_text, and
+# therefore regeneration, matches the merged file). Blanks are recreated. Pins
+# present in the block but absent from the layout are appended to their original
+# side so nothing is silently dropped.
+def build_state_from_layout(symbol_block_text: str, layout: dict) -> EditorState:
+    base = build_state_from_symbol(symbol_block_text)
+
+    # Pool of the block's real slots, keyed by identity, preserving order
+    pool: dict = {}
+
+    for side in ALL_SIDES:
+        for slot in base.sides[side]:
+            pool.setdefault(_slot_identity(slot), []).append((side, slot))
+
+    state = EditorState()
+    consumed: set = set()
+
+    for side in ALL_SIDES:
+        new_slots = []
+
+        for entry in layout.get(side, []):
+            if entry.get("blank"):
+                new_slots.append(make_blank())
+                continue
+
+            key = _entry_identity(entry)
+            queue = pool.get(key)
+
+            if queue:
+                _origin_side, slot = queue.pop(0)
+                new_slots.append(slot)
+                consumed.add(id(slot))
+
+        state.sides[side] = new_slots
+
+    # Preserve any real pin the layout never mentioned (defensive; keeps parity)
+    for side in ALL_SIDES:
+        for slot in base.sides[side]:
+            if id(slot) not in consumed:
+                state.sides[side].append(slot)
+
+    # Start the cursor on the first non-empty side
+    for side in ALL_SIDES:
+        if state.sides[side]:
+            state.cursor_side = side
+            state.cursor_index = 0
+            break
+
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Shared file-rewrite loop
+# ---------------------------------------------------------------------------
+
+
+# Rewrite the requested symbols in a library file using a per-symbol state
+# resolver. resolve_state(name, block_text) returns an accepted EditorState, or
+# None to leave that symbol untouched (cancel). Returns the same result dict as
+# apply_symbol_style_to_symbol_file, or None when nothing was changed.
+def reconstruct_symbols_in_file(
+    symbol_library_path: str | Path,
+    symbol_names: list[str],
+    resolve_state,
+) -> dict | None:
+    symbol_library_path = Path(symbol_library_path)
+    content = symbol_library_path.read_text(encoding="utf-8", errors="ignore")
+
+    requested = [name for name in dict.fromkeys(symbol_names) if name]
+    requested_set = set(requested)
+
+    reconstructed = []
+    cancelled = []
+
+    symbol_blocks = find_symbol_blocks(content)
+
+    # Rewrite from the end so earlier block offsets stay valid
+    for block in sorted(symbol_blocks, key=lambda item: item["start"], reverse=True):
+        name = block.get("name", "")
+
+        if requested_set and name not in requested_set:
+            continue
+
+        accepted_state = resolve_state(name, block["text"])
+
+        if accepted_state is None:
+            cancelled.append(name)
+            continue
+
+        new_block = regenerate_symbol_block(block["text"], name, accepted_state)
+        content = content[: block["start"]] + new_block + content[block["end"] + 1 :]
+        reconstructed.append(name)
+
+    updated = bool(reconstructed)
+
+    # A run where every symbol was cancelled makes no changes.
+    if not updated:
+        return None
+
+    symbol_library_path.write_text(content, encoding="utf-8")
+    reconstructed.reverse()
+
+    return {
+        "symbol_library": str(symbol_library_path),
+        "updated": updated,
+        "reconstructed_symbol_names": reconstructed,
+        "cancelled_symbol_names": cancelled,
+        "styled_symbol_names": reconstructed,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Strategy
 # ---------------------------------------------------------------------------
 
@@ -462,52 +630,52 @@ class InteractiveReconstructionStrategy(SymbolFormattingStrategy):
         symbol_library_path: str | Path,
         symbol_names: list[str],
     ) -> dict | None:
-        symbol_library_path = Path(symbol_library_path)
-        content = symbol_library_path.read_text(encoding="utf-8", errors="ignore")
+        return reconstruct_symbols_in_file(
+            symbol_library_path=symbol_library_path,
+            symbol_names=symbol_names,
+            resolve_state=lambda name, block_text: self._edit_symbol(block_text),
+        )
 
-        requested = [name for name in dict.fromkeys(symbol_names) if name]
-        requested_set = set(requested)
 
-        reconstructed = []
-        cancelled = []
+class PredeterminedLayoutStrategy(SymbolFormattingStrategy):
+    """Apply already-decided pin layouts, with no interactive editor.
 
-        symbol_blocks = find_symbol_blocks(content)
+    This is the "apply layout" half of the interactive workflow, split out so a
+    layout decided on the GUI thread (via a modal editor, off the import worker)
+    can be handed to the threaded importer. It reuses the exact same regeneration
+    path as InteractiveReconstructionStrategy, so replaying a layout produces
+    byte-identical output to running the editor with the same moves.
 
-        # Rewrite from the end so earlier block offsets stay valid
-        for block in sorted(symbol_blocks, key=lambda item: item["start"], reverse=True):
-            name = block.get("name", "")
+    ``layouts`` maps each symbol name to its layout dict (see layout_from_state).
+    Requested symbols without a layout are left untouched, mirroring a cancel.
+    """
 
-            if requested_set and name not in requested_set:
-                continue
+    def __init__(self, layouts: dict):
+        self.layouts = dict(layouts or {})
 
-            accepted_state = self._edit_symbol(block["text"])
+    # Build a strategy directly from decided EditorState objects
+    @classmethod
+    def from_states(cls, states: dict) -> "PredeterminedLayoutStrategy":
+        return cls({name: layout_from_state(state) for name, state in states.items()})
 
-            if accepted_state is None:
-                cancelled.append(name)
-                continue
+    def _resolve(self, name: str, block_text: str) -> EditorState | None:
+        layout = self.layouts.get(name)
 
-            new_block = regenerate_symbol_block(block["text"], name, accepted_state)
-            content = content[: block["start"]] + new_block + content[block["end"] + 1 :]
-            reconstructed.append(name)
-
-        updated = bool(reconstructed)
-
-        if updated:
-            symbol_library_path.write_text(content, encoding="utf-8")
-
-        # A run where every symbol was cancelled makes no changes.
-        if not updated:
+        if layout is None:
             return None
 
-        reconstructed.reverse()
+        return build_state_from_layout(block_text, layout)
 
-        return {
-            "symbol_library": str(symbol_library_path),
-            "updated": updated,
-            "reconstructed_symbol_names": reconstructed,
-            "cancelled_symbol_names": cancelled,
-            "styled_symbol_names": reconstructed,
-        }
+    def format_symbol_library_file(
+        self,
+        symbol_library_path: str | Path,
+        symbol_names: list[str],
+    ) -> dict | None:
+        return reconstruct_symbols_in_file(
+            symbol_library_path=symbol_library_path,
+            symbol_names=symbol_names,
+            resolve_state=self._resolve,
+        )
 
 
 # Pin direction vector for an angle, matching the symbol_style convention
