@@ -249,19 +249,36 @@ def attempt_import(
     library: str,
     debug: bool = False,
     show_summary: bool = True,
+    interactive: bool = False,
 ) -> bool:
     print(f"Importing {zip_path.name} ...")
 
     try:
         part_name = infer_part_name_from_zip(zip_path)
-        result = import_cad_zip(
-            zip_path,
-            project_root,
-            library,
-            part_name,
-            # Default KiCad-style formatting with theme-adaptive colors
-            symbol_style=SymbolStyle(),
-        )
+
+        if interactive:
+            # Reconstruct pin layouts interactively; an explicit formatting
+            # strategy overrides symbol_style inside import_cad_zip.
+            from component_importer.interactive_strategy import (
+                InteractiveReconstructionStrategy,
+            )
+
+            result = import_cad_zip(
+                zip_path,
+                project_root,
+                library,
+                part_name,
+                formatting_strategy=InteractiveReconstructionStrategy(),
+            )
+        else:
+            result = import_cad_zip(
+                zip_path,
+                project_root,
+                library,
+                part_name,
+                # Default KiCad-style formatting with theme-adaptive colors
+                symbol_style=SymbolStyle(),
+            )
     except Exception as exc:
         if debug:
             traceback.print_exc()
@@ -384,6 +401,7 @@ def import_all(args: argparse.Namespace, cwd: Path, project_root: Path, library:
             library,
             debug=args.debug,
             show_summary=False,
+            interactive=getattr(args, "interactive", False),
         )
         results.append((zip_path, ok))
 
@@ -464,7 +482,13 @@ def cmd_import(args: argparse.Namespace, cwd: Path) -> int:
             print("Nothing selected.")
             return 0
 
-    ok = attempt_import(target, project_root, library, debug=args.debug)
+    ok = attempt_import(
+        target,
+        project_root,
+        library,
+        debug=args.debug,
+        interactive=getattr(args, "interactive", False),
+    )
 
     if not ok:
         return 1
@@ -521,6 +545,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Show full tracebacks on unexpected errors.",
+    )
+    import_parser.add_argument(
+        "--interactive",
+        "-i",
+        action="store_true",
+        help="Reconstruct each symbol's pin layout in an interactive editor.",
     )
 
     return parser

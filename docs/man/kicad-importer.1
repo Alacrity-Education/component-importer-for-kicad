@@ -1,4 +1,4 @@
-.TH KICAD-IMPORTER 1 "2026-08-26" "kicad-importer" "User Commands"
+.TH KICAD-IMPORTER 1 "2026-08-28" "kicad-importer" "User Commands"
 .SH NAME
 kicad-importer \- import component ZIP files into KiCad project libraries
 .SH SYNOPSIS
@@ -16,6 +16,7 @@ kicad-importer \- import component ZIP files into KiCad project libraries
 .RI [ FILE ]
 .RB [ \-\-all ]
 .RB [ \-\-delete ]
+.RB [ \-\-interactive ]
 .RB [ \-\-debug ]
 .SH DESCRIPTION
 .B kicad-importer
@@ -105,6 +106,33 @@ imported.
 With
 .BR \-\-all ,
 the delete phase is skipped entirely when any import failed.
+.TP
+.BR \-\-interactive ", " \-i
+Open a terminal editor for each imported symbol to reconstruct its pin layout
+before it is written to the library.
+The symbol is drawn as an ASCII chip; pin names on the top and bottom sides are
+drawn vertically.
+Arrow keys move the cursor between pins;
+.B Space
+selects a pin so the arrow keys move it (reordering within a side, carrying it
+around a corner onto the neighbouring side, or jumping it to the opposite side
+when the arrow points into the body).
+.B S
+inserts a blank spacer slot and
+.B d
+deletes one;
+real pins are never deleted.
+Pressing
+.B y
+twice accepts and regenerates the symbol with an auto-sized body on the
+2.54 mm grid; pressing
+.B Esc
+then
+.B Enter
+cancels and imports the symbol exactly as merged.
+With
+.BR \-\-all ,
+the editor runs once per imported ZIP in turn.
 .TP
 .B \-\-debug
 Print full Python tracebacks for unexpected errors instead of one-line

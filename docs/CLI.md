@@ -7,7 +7,7 @@ Download a ZIP, type one command, and the part is in your project library.
 
 ```
 kicad-importer init [--library NAME] [--downloads PATH]
-kicad-importer import [FILE] [--all|-a] [--delete|-d] [--debug]
+kicad-importer import [FILE] [--all|-a] [--delete|-d] [--interactive|-i] [--debug]
 ```
 
 # Project workflow
@@ -147,6 +147,38 @@ present in the next bulk import invocation.
 kicad-importer import ul_TPS631000DRLR.zip --delete
 kicad-importer import --all --delete
 ```
+
+## Interactive pin layout: `--interactive` / `-i`
+
+Downloaded symbols often arrive with their pins in an awkward layout. Add
+`--interactive` (or `-i`) to open a small terminal editor for each imported
+symbol and reconstruct the pin placement before it is written to the library:
+
+```bash
+kicad-importer import ul_BQ28Z610DRZR.zip --interactive
+```
+
+The editor draws the symbol as an ASCII chip with pin names inside the body
+edge and pin numbers outside. Pins on the top and bottom sides are drawn with
+their names stacked vertically, mirroring how KiCad renders them.
+
+- Arrow keys move the cursor between pins (the cursor pin is shown in yellow,
+  with its edge marked by a solid block).
+- `Space` selects the pin under the cursor (shown in red); arrow keys then move
+  the pin: up/down (or left/right on the top/bottom sides) reorder it within its
+  side and, past either end, carry it around the corner onto the neighbouring
+  side. The arrow pointing into the body jumps the pin straight to the opposite
+  side. `Space` again deselects.
+- `S` inserts a blank spacer slot at the cursor; `d` deletes a blank (real pins
+  are never deleted).
+- `y` then `y` accepts and regenerates the symbol; `Esc` then `Enter` cancels
+  and imports the symbol exactly as it was merged.
+
+On accept, the body rectangle is auto-sized so no pin names collide, pins are
+placed on the 2.54 mm grid with their connection points exactly on the body
+edge, and the symbol's properties and footprint links are preserved. With
+`--all`, the editor runs once per imported ZIP in turn.
+
 # Quick reference
 
 | I want to... | Run |
@@ -157,3 +189,4 @@ kicad-importer import --all --delete
 | Browse and pick a part | `kicad-importer import` |
 | Import everything here | `kicad-importer import --all` |
 | …and tidy up the ZIPs | `kicad-importer import --all --delete` |
+| Rework pin layout on import | `kicad-importer import <file.zip> --interactive` |
