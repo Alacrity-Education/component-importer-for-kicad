@@ -62,7 +62,6 @@ class TerminalKeySource(KeySource):
 
     # Read one logical key from the terminal, decoding CSI arrow sequences
     def read_key(self) -> Key:
-        import sys
         import termios
         import tty
 
@@ -70,35 +69,46 @@ class TerminalKeySource(KeySource):
         old_settings = termios.tcgetattr(fd)
 
         try:
-            # Switch to cbreak so single keystrokes arrive without Enter
-            tty.setcbreak(fd)
-            char = self._stream.read(1)
+            # Switch to cbreak so single keystrokes arrive without Enter.
+            # TCSANOW keeps queued input; the default TCSAFLUSH would drop
+            # keys that arrived between two read_key calls.
+            tty.setcbreak(fd, termios.TCSANOW)
+            char = self._read_byte(fd)
 
             # Escape may start a CSI arrow sequence or be a bare Esc press
             if char == "\x1b":
-                return self._read_escape_sequence()
+                return self._read_escape_sequence(fd)
 
             return self._classify_char(char)
         finally:
             # Always restore the previous terminal mode
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
+    # Read one byte straight from the descriptor. Python's buffered stdin
+    # would slurp a whole escape sequence into its internal buffer, making
+    # the select() probe below miss the bytes that already arrived.
+    def _read_byte(self, fd) -> str:
+        import os
+
+        return os.read(fd, 1).decode("utf-8", "replace")
+
     # Decode the bytes following an initial Esc byte
-    def _read_escape_sequence(self) -> Key:
+    def _read_escape_sequence(self, fd) -> Key:
         import select
 
         # A lone Esc arrives with no immediately-following bytes
-        following, _, _ = select.select([self._stream], [], [], 0.05)
+        following, _, _ = select.select([fd], [], [], 0.05)
 
         if not following:
             return Key.ESC
 
-        bracket = self._stream.read(1)
+        # Arrows arrive as CSI (Esc [) or SS3 (Esc O) sequences
+        bracket = self._read_byte(fd)
 
-        if bracket != "[":
+        if bracket not in ("[", "O"):
             return Key.ESC
 
-        final = self._stream.read(1)
+        final = self._read_byte(fd)
 
         return {
             "A": Key.UP,
