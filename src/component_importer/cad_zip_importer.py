@@ -40,9 +40,9 @@ from component_importer.symbol_footprint_linker import find_symbol_blocks
 # Import symbol library merge helper
 from component_importer.symbol_library_manager import merge_symbol_library_content_into_target
 
-# Import optional symbol style rewriter
-from component_importer.symbol_style import apply_symbol_style_to_symbol_file
-from component_importer.symbol_style import normalize_symbol_style
+# Import symbol formatting strategies used to rewrite imported symbols
+from component_importer.formatting_strategy import NoOpFormattingStrategy
+from component_importer.formatting_strategy import strategy_from_symbol_style
 
 # Import backup helpers
 from component_importer.backup_helper import get_backup_timestamp, backup_file_if_exists
@@ -247,17 +247,17 @@ def detect_existing_component(zf: ZipFile, assets: list, paths: dict) -> dict:
     }
 
 
-# Apply the configured symbol style to a selected set of symbols in one library
+# Apply the configured formatting strategy to a selected set of symbols in one library
 def apply_style_to_selected_symbols(
     project_root: Path,
     symbol_library_path: Path,
-    symbol_style: object | None,
+    formatting_strategy: object,
     symbol_names: list[str],
     backup_timestamp: str,
     create_backups: bool,
     imported: dict,
 ) -> None:
-    if symbol_style is None:
+    if isinstance(formatting_strategy, NoOpFormattingStrategy):
         return
 
     symbol_names = [
@@ -279,9 +279,8 @@ def apply_style_to_selected_symbols(
         if backup_path:
             imported["backups"].append(backup_path)
 
-    imported["symbol_style_update"] = apply_symbol_style_to_symbol_file(
+    imported["symbol_style_update"] = formatting_strategy.format_symbol_library_file(
         symbol_library_path=symbol_library_path,
-        symbol_style=symbol_style,
         symbol_names=symbol_names,
     )
 
@@ -307,6 +306,7 @@ def import_cad_zip(
     symbol_style: object | None = None,
     model_path_prefix: str | None = None,
     library_layout: str = "project",
+    formatting_strategy: object | None = None,
 ) -> dict:
     # Convert input paths to Path objects
     zip_path = Path(zip_path)
@@ -315,8 +315,11 @@ def import_cad_zip(
     # Clean part name so it can safely be used in filenames
     part_name = safe_filename(part_name)
 
-    # Normalize optional symbol style settings
-    symbol_style = normalize_symbol_style(symbol_style)
+    # Resolve the formatting strategy, letting an explicit strategy override symbol_style
+    if formatting_strategy is None:
+        formatting_strategy = strategy_from_symbol_style(symbol_style)
+    else:
+        formatting_strategy = strategy_from_symbol_style(formatting_strategy)
 
     # Use same library name for symbols and footprints if specific names are not provided
     if symbol_library_name is None:
@@ -389,7 +392,7 @@ def import_cad_zip(
         apply_style_to_selected_symbols(
             project_root=project_root,
             symbol_library_path=paths["symbol_lib_path"],
-            symbol_style=symbol_style,
+            formatting_strategy=formatting_strategy,
             symbol_names=existing_assets.get("source_symbol_names", []),
             backup_timestamp=backup_timestamp,
             create_backups=create_backups,
@@ -582,7 +585,7 @@ def import_cad_zip(
                 imported["symbol_footprint_link"].append(link_result)
 
     # Apply optional visual style only to symbols imported in this operation
-    if symbol_style is not None and selected_symbol_library_used:
+    if selected_symbol_library_used:
         merged_symbol_names = []
 
         for merge_result in imported["merged_symbols"]:
@@ -591,7 +594,7 @@ def import_cad_zip(
         apply_style_to_selected_symbols(
             project_root=project_root,
             symbol_library_path=paths["symbol_lib_path"],
-            symbol_style=symbol_style,
+            formatting_strategy=formatting_strategy,
             symbol_names=merged_symbol_names,
             backup_timestamp=backup_timestamp,
             create_backups=create_backups,
