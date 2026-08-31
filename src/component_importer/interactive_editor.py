@@ -17,9 +17,15 @@
 #   top   : left -> right
 #   bottom: left -> right
 
+import re
 from dataclasses import dataclass, field
 
 from component_importer.key_source import Key, KeySource
+
+
+# Matches SGR (colour) escape sequences so the visible width of a rendered line
+# can be measured without counting the invisible escape bytes.
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 # ANSI colour codes used by the renderer
@@ -630,6 +636,52 @@ def render_screen(state: EditorState) -> list[str]:
     return lines
 
 
+# Visible width of a rendered line, ignoring ANSI colour escape sequences
+def _visible_len(line: str) -> int:
+    return len(_ANSI_SGR_RE.sub("", line))
+
+
+# Centre the editor screen within a (width, height) character grid. render_screen
+# stays a tight-bounding-box producer; centring is a pure, separately testable
+# transform applied just before drawing.
+#
+# The chip is centred horizontally on its own width (uniform leading spaces), so
+# the much wider help/status footer never drags it off-centre. The footer stays
+# full-width at column 0 below the chip (matching the Qt editor, whose help text
+# is a separate label under the canvas). The whole block is centred vertically by
+# prepending blank rows. Every pad is clamped at 0, so content larger than the
+# grid anchors top-left and never gets negative padding.
+def center_lines(
+    chip_lines: list[str], footer_lines: list[str], width: int, height: int
+) -> list[str]:
+    if not chip_lines and not footer_lines:
+        return []
+
+    chip_width = max((_visible_len(line) for line in chip_lines), default=0)
+    left_pad = max(0, (width - chip_width) // 2)
+
+    pad = " " * left_pad
+    shifted_chip = [pad + line if line else "" for line in chip_lines]
+
+    block = shifted_chip + list(footer_lines)
+    top_pad = max(0, (height - len(block)) // 2)
+
+    return [""] * top_pad + block
+
+
+# Split render_screen output into its chip lines and the help/status footer. The
+# footer is the trailing blank separator plus the (always non-empty) help/status
+# lines, so the split is the LAST blank line -- an internal blank chip row (e.g.
+# an empty top-number row) must not be mistaken for the separator.
+def split_chip_and_footer(lines: list[str]) -> tuple[list[str], list[str]]:
+    for offset, line in enumerate(reversed(lines)):
+        if line == "":
+            sep = len(lines) - 1 - offset
+            return lines[:sep], lines[sep:]
+
+    return lines, []
+
+
 # ---------------------------------------------------------------------------
 # Terminal driver (the only part that touches the real screen)
 # ---------------------------------------------------------------------------
@@ -660,8 +712,15 @@ class TerminalRenderer:
 
         return False
 
-    # Clear the screen and paint the given lines
+    # Clear the screen and paint the given lines, centred in the terminal.
+    # The size is re-queried every frame so a resized window re-centres.
     def render(self, lines: list[str]) -> None:
+        import shutil
+
+        size = shutil.get_terminal_size()
+        chip, footer = split_chip_and_footer(lines)
+        lines = center_lines(chip, footer, size.columns, size.lines)
+
         self._stream.write("\x1b[2J\x1b[H")
         self._stream.write("\r\n".join(lines))
         self._stream.write("\r\n")

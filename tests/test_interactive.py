@@ -6,14 +6,17 @@ from pathlib import Path
 
 from component_importer.interactive_editor import (
     ANSI_RED,
+    ANSI_RESET,
     ANSI_YELLOW,
     CURSOR_BLOCK,
     EditorState,
     Slot,
+    center_lines,
     handle_key,
     make_blank,
     render_screen,
     run_editor,
+    split_chip_and_footer,
 )
 from component_importer.interactive_strategy import (
     CHAR_WIDTH_MM,
@@ -333,6 +336,88 @@ class RenderSnapshotTest(unittest.TestCase):
         handle_key(state, Key.ESC)
         lines = render_screen(state)
         self.assertTrue(any("press Enter to cancel" in line for line in lines))
+
+
+class CenterLinesTest(unittest.TestCase):
+    def test_centers_chip_horizontally_and_vertically(self):
+        chip = ["abc", "de"]  # width 3, height 2
+        out = center_lines(chip, [], width=11, height=6)
+        # top_pad = (6 - 2) // 2 = 2 blank rows prepended
+        self.assertEqual(out[:2], ["", ""])
+        # left_pad = (11 - 3) // 2 = 4 leading spaces on each chip line
+        self.assertEqual(out[2], "    abc")
+        self.assertEqual(out[3], "    de")
+
+    def test_left_pad_uses_widest_chip_line(self):
+        # The widest chip line drives the uniform horizontal shift
+        chip = ["short", "a longer line"]  # width 13
+        out = center_lines(chip, [], width=33, height=2)  # left_pad = (33-13)//2 = 10
+        self.assertTrue(out[0].startswith(" " * 10 + "short"))
+        self.assertTrue(out[1].startswith(" " * 10 + "a longer line"))
+
+    def test_footer_stays_full_width_below_chip(self):
+        # The chip is centred on its own width; a wider footer is NOT counted
+        # for horizontal centring and stays at column 0.
+        chip = ["chip"]  # width 4
+        footer = ["", "a very wide help footer line"]  # width 28
+        out = center_lines(chip, footer, width=20, height=3)
+        # left_pad from the chip only: (20 - 4) // 2 = 8
+        self.assertEqual(out[0], " " * 8 + "chip")
+        # Footer keeps its blank separator and full-width (col 0) help line
+        self.assertEqual(out[1], "")
+        self.assertEqual(out[2], "a very wide help footer line")
+
+    def test_vertical_centering_counts_footer_height(self):
+        chip = ["chip"]
+        footer = ["", "help"]  # block height = 1 + 2 = 3
+        out = center_lines(chip, footer, width=40, height=9)  # top_pad = (9-3)//2 = 3
+        self.assertEqual(out[:3], ["", "", ""])
+        self.assertEqual(len(out), 6)
+
+    def test_ansi_codes_ignored_when_measuring_width(self):
+        # Colour escapes must not count toward the visible chip width
+        colored = f"{ANSI_YELLOW}ab{ANSI_RESET}"  # visible width 2
+        out = center_lines([colored], [], width=12, height=1)  # left_pad = (12-2)//2 = 5
+        self.assertEqual(out[0], " " * 5 + colored)
+
+    def test_internal_blank_chip_line_stays_blank(self):
+        # A blank row inside the chip keeps blank (no trailing spaces)
+        out = center_lines(["", "xx"], [], width=8, height=2)  # left_pad = (8-2)//2 = 3
+        self.assertEqual(out[0], "")
+        self.assertEqual(out[1], "   xx")
+
+    def test_oversize_chip_has_no_negative_padding(self):
+        chip = ["a" * 40, "b" * 40, "c" * 40]  # wider and taller than the grid
+        out = center_lines(chip, [], width=10, height=1)
+        # No blank top rows, no leading spaces: anchored top-left
+        self.assertEqual(out, chip)
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(center_lines([], [], width=80, height=24), [])
+
+
+class SplitChipAndFooterTest(unittest.TestCase):
+    def test_splits_on_last_blank_not_internal_blank(self):
+        # render_screen may emit an internal blank chip row (empty top-number
+        # row); the split must land on the trailing separator, not that row.
+        state = EditorState()
+        state.sides["left"] = [Slot(name="A", number="1")]
+        state.sides["right"] = [Slot(name="C", number="3")]
+        lines = render_screen(state)
+        chip, footer = split_chip_and_footer(lines)
+
+        # The help line lives in the footer, never in the chip
+        self.assertTrue(any("arrows: move" in line for line in footer))
+        self.assertFalse(any("arrows: move" in line for line in chip))
+        # Footer begins with the blank separator
+        self.assertEqual(footer[0], "")
+        # The leading internal blank row is preserved in the chip
+        self.assertEqual(chip[0], "")
+
+    def test_no_blank_returns_all_as_chip(self):
+        chip, footer = split_chip_and_footer(["a", "b"])
+        self.assertEqual(chip, ["a", "b"])
+        self.assertEqual(footer, [])
 
 
 def pins_from_block(block_text):

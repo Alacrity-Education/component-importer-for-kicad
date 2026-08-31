@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtGui import QPainter
 from PyQt6.QtGui import QPen
 from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
@@ -32,8 +33,6 @@ TEXT_COLOR = QColor(30, 30, 30)
 
 # Pixel geometry (functional, not fine-tuned)
 PIN_STUB = 22
-SIDE_MARGIN = 150
-TOP_MARGIN = 120
 MIN_BODY_W = 160
 MIN_BODY_H = 120
 
@@ -94,6 +93,59 @@ class _PinCanvas(QWidget):
             return CURSOR_COLOR
         return TEXT_COLOR
 
+    # Label text drawn beside a slot (name plus optional pin number)
+    def _label_text(self, slot) -> str:
+        return f"{slot.display_name} ({slot.number})" if slot.number else slot.display_name
+
+    # Widest label pixel width across a side (0 when the side is empty)
+    def _max_label_width(self, fm, slots) -> int:
+        return max(
+            (fm.horizontalAdvance(self._label_text(slot)) for slot in slots),
+            default=0,
+        )
+
+    # Chip geometry: body size plus how far drawn content (stub + label) reaches
+    # beyond each body edge. Pure function of the state and current font metrics.
+    def _content_metrics(self):
+        state = self.state
+        left = state.sides["left"]
+        right = state.sides["right"]
+        top = state.sides["top"]
+        bottom = state.sides["bottom"]
+
+        fm = QFontMetrics(self.font())
+        pitch = fm.height() + 12
+
+        n_v = max(len(left), len(right), 1)
+        n_h = max(len(top), len(bottom), 1)
+
+        body_w = max(n_h * pitch + pitch, MIN_BODY_W)
+        body_h = max(n_v * pitch + pitch, MIN_BODY_H)
+
+        # Stub length plus a small text gap, then the widest label on that side
+        pad = PIN_STUB + 6
+        left_ext = pad + self._max_label_width(fm, left)
+        right_ext = pad + self._max_label_width(fm, right)
+        top_ext = pad + self._max_label_width(fm, top)
+        bottom_ext = pad + self._max_label_width(fm, bottom)
+
+        return body_w, body_h, left_ext, right_ext, top_ext, bottom_ext
+
+    # Body top-left (bx, by) that centres the whole drawn chip (body + stubs +
+    # labels) in the widget's current size. Recomputed every paint so dialog
+    # resizes stay centred. Padding is clamped so an oversized chip anchors with
+    # its top-left labels flush to the widget edge (never off-canvas).
+    def _compute_origin(self):
+        body_w, body_h, left_ext, right_ext, top_ext, bottom_ext = self._content_metrics()
+
+        content_w = left_ext + body_w + right_ext
+        content_h = top_ext + body_h + bottom_ext
+
+        bx = left_ext + max(0, (self.width() - content_w) // 2)
+        by = top_ext + max(0, (self.height() - content_h) // 2)
+
+        return bx, by
+
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -107,18 +159,8 @@ class _PinCanvas(QWidget):
         cursor = (state.cursor_side, state.cursor_index)
         selected = state.selected
 
-        fm = QFontMetrics(self.font())
-        ch = fm.height()
-        pitch = ch + 12
-
-        n_v = max(len(left), len(right), 1)
-        n_h = max(len(top), len(bottom), 1)
-
-        body_w = max(n_h * pitch + pitch, MIN_BODY_W)
-        body_h = max(n_v * pitch + pitch, MIN_BODY_H)
-
-        bx = SIDE_MARGIN
-        by = TOP_MARGIN
+        body_w, body_h, *_ = self._content_metrics()
+        bx, by = self._compute_origin()
 
         # Chip body rectangle
         painter.setPen(QPen(BODY_COLOR, 2))
@@ -228,6 +270,25 @@ class InteractivePinLayoutDialog(QDialog):
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+
+        # OK / Cancel are mouse shortcuts for the keyboard accept / cancel flows:
+        # OK bypasses the two-step Y->Y prompt (dialog.accept()), Cancel bypasses
+        # the Esc->Enter prompt (dialog.reject()). Downstream layout extraction
+        # reads dialog.state, which OK leaves untouched exactly like the Y path.
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        # The buttons must never intercept the editor's keys: NoFocus keeps arrow /
+        # Space / S / D / Y / Esc / Enter flowing to keyPressEvent, and clearing
+        # auto-default / default stops QDialog from firing OK when the user presses
+        # Enter to confirm an exit prompt.
+        for button in self.button_box.buttons():
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setAutoDefault(False)
+            button.setDefault(False)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
 
         self._refresh_status()
 

@@ -283,6 +283,100 @@ class InteractiveDialogTest(unittest.TestCase):
         QTest.keyClick(dialog, Qt.Key.Key_Down)
         self.assertNotEqual(snapshot(dialog.state), before)
 
+    def test_ok_button_accepts_bypassing_prompt(self):
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = self._make_dialog()
+        # Move left[0]="A" inbound to the right side, then click OK directly:
+        # no two-step Y->Y prompt is needed.
+        self._drive(dialog, [Key.SPACE, Key.RIGHT])
+        dialog.button_box.button(QDialogButtonBox.StandardButton.Ok).click()
+
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        # State is left intact exactly like the Y path so layout extraction reads
+        # the moved pin on the right side.
+        self.assertIn("A", [slot.name for slot in dialog.state.sides["right"]])
+
+    def test_cancel_button_rejects(self):
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = self._make_dialog()
+        dialog.button_box.button(QDialogButtonBox.StandardButton.Cancel).click()
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Rejected)
+
+    def test_buttons_never_take_keyboard_focus_or_default(self):
+        from PyQt6.QtCore import Qt
+
+        dialog = self._make_dialog()
+        for button in dialog.button_box.buttons():
+            self.assertEqual(button.focusPolicy(), Qt.FocusPolicy.NoFocus)
+            self.assertFalse(button.autoDefault())
+            self.assertFalse(button.isDefault())
+
+    def test_enter_outside_prompt_does_not_trigger_ok(self):
+        from PyQt6.QtWidgets import QDialog
+
+        dialog = self._make_dialog()
+        # Plain Enter is inert during editing; the OK button's default-button
+        # behaviour must not hijack it into an accept.
+        self._drive(dialog, [Key.ENTER])
+        self.assertIsNone(dialog.state.pending)
+        self.assertNotEqual(dialog.result(), QDialog.DialogCode.Accepted)
+
+    def test_enter_still_confirms_exit_prompt(self):
+        from PyQt6.QtWidgets import QDialog
+
+        dialog = self._make_dialog()
+        # Esc opens the exit prompt; Enter must still mean "confirm cancel"
+        # (reject), not fire the OK button.
+        self._drive(dialog, [Key.ESC, Key.ENTER])
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Rejected)
+
+
+@unittest.skipUnless(
+    os.environ.get("QT_QPA_PLATFORM") == "offscreen",
+    "GUI test requires QT_QPA_PLATFORM=offscreen",
+)
+class CanvasCenteringTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _canvas(self):
+        from component_importer.gui_interactive_editor import _PinCanvas
+
+        return _PinCanvas(fixture_state())
+
+    def test_small_state_centered_on_large_canvas(self):
+        canvas = self._canvas()
+        canvas.resize(2000, 1400)
+
+        body_w, body_h, left_ext, right_ext, top_ext, bottom_ext = (
+            canvas._content_metrics()
+        )
+        bx, by = canvas._compute_origin()
+
+        # The whole drawn chip (labels + stubs + body) is centred in the widget
+        content_cx = (bx - left_ext) + (left_ext + body_w + right_ext) / 2
+        content_cy = (by - top_ext) + (top_ext + body_h + bottom_ext) / 2
+        self.assertAlmostEqual(content_cx, 1000, delta=1)
+        self.assertAlmostEqual(content_cy, 700, delta=1)
+
+    def test_oversize_chip_anchors_without_negative_origin(self):
+        canvas = self._canvas()
+        # Drop the minimum-size floor so the widget can be smaller than the chip
+        canvas.setMinimumSize(0, 0)
+        canvas.resize(40, 40)  # smaller than the chip in every dimension
+
+        _, _, left_ext, _, top_ext, _ = canvas._content_metrics()
+        bx, by = canvas._compute_origin()
+
+        # Content is flush to the top-left edge, never pushed off-canvas
+        self.assertEqual(bx - left_ext, 0)
+        self.assertEqual(by - top_ext, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
