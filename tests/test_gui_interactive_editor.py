@@ -297,6 +297,48 @@ class InteractiveDialogTest(unittest.TestCase):
         # the moved pin on the right side.
         self.assertIn("A", [slot.name for slot in dialog.state.sides["right"]])
 
+    def test_ok_button_layout_byte_identical_to_terminal_accept(self):
+        # End-to-end equivalence of the two accept paths on the same moves:
+        # the GUI OK-button path the app actually uses
+        # (build_state_from_symbol -> dialog -> OK -> layout_from_state ->
+        # PredeterminedLayoutStrategy) must rewrite the library byte-for-byte
+        # identically to the terminal editor's Y,Y accept.
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox
+        from component_importer.gui_interactive_editor import (
+            InteractivePinLayoutDialog,
+        )
+
+        moves = [Key.SPACE, Key.RIGHT]
+
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+            path_terminal = Path(temp_dir) / "terminal.kicad_sym"
+            path_dialog = Path(temp_dir) / "dialog.kicad_sym"
+            path_terminal.write_text(LIBRARY, encoding="utf-8")
+            path_dialog.write_text(LIBRARY, encoding="utf-8")
+
+            # Terminal editor: replay moves then accept with Y, Y
+            source = ScriptedKeySource(list(moves) + [Key.Y, Key.Y])
+            InteractiveReconstructionStrategy(
+                key_source=source, renderer=_NullRenderer()
+            ).format_symbol_library_file(path_terminal, ["FOUR"])
+
+            # GUI dialog: same moves, accept by clicking OK (not the Y prompt)
+            dialog = InteractivePinLayoutDialog(
+                build_state_from_symbol(FOUR_SIDED_SYMBOL), "FOUR"
+            )
+            self._drive(dialog, moves)
+            dialog.button_box.button(QDialogButtonBox.StandardButton.Ok).click()
+            self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+
+            PredeterminedLayoutStrategy(
+                {"FOUR": layout_from_state(dialog.state)}
+            ).format_symbol_library_file(path_dialog, ["FOUR"])
+
+            self.assertEqual(
+                path_terminal.read_text(encoding="utf-8"),
+                path_dialog.read_text(encoding="utf-8"),
+            )
+
     def test_cancel_button_rejects(self):
         from PyQt6.QtWidgets import QDialog, QDialogButtonBox
 

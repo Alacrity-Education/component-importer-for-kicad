@@ -238,6 +238,43 @@ class MainWindowOverwriteDecisionTest(unittest.TestCase):
         worker_cls.assert_called_once()
         self.assertTrue(worker_cls.call_args.kwargs["skip_existing_components"])
 
+    def test_auto_import_existing_part_interactive_on_stays_silent(self):
+        from component_importer import gui_main_window
+        from PyQt6.QtWidgets import QMessageBox
+
+        window = self._make_window()
+        # Interactive pin layout ON and the part already exists on disk: the auto
+        # path must still start the worker with skip=True, never open the
+        # overwrite dialog, and never consult either resolver.
+        window.config = replace(window.config, interactive_pin_layout=True)
+
+        overwrite_spy = MagicMock()
+        interactive_spy = MagicMock(return_value=None)
+        window.resolve_overwrite_decision = overwrite_spy
+        window.resolve_interactive_strategy = interactive_spy
+
+        existing = {
+            "already_exists": True,
+            "verification": {"symbol": "differs", "footprints": "differs"},
+            "message": "PART already exists in the library.",
+        }
+        with patch.object(
+            gui_main_window, "check_existing_component", return_value=existing
+        ) as existing_mock, patch.object(
+            QMessageBox, "exec"
+        ) as exec_mock, patch.object(
+            gui_main_window, "ImportComponentWorker"
+        ) as worker_cls, patch.object(gui_main_window, "QThread"):
+            window.start_import("part.zip", "PART", auto_import=True)
+
+        # No dialog, no existence probe, no resolver calls: fully silent.
+        exec_mock.assert_not_called()
+        existing_mock.assert_not_called()
+        overwrite_spy.assert_not_called()
+        interactive_spy.assert_not_called()
+        worker_cls.assert_called_once()
+        self.assertTrue(worker_cls.call_args.kwargs["skip_existing_components"])
+
 
 if __name__ == "__main__":
     unittest.main()
