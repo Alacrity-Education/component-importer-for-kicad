@@ -45,6 +45,9 @@ from component_importer.interactive_strategy import PredeterminedLayoutStrategy
 from component_importer.app_paths import APP_NAME
 from component_importer.app_paths import runtime_icon_path
 
+# Import Qt-free overwrite pre-check shared with the CLI
+from component_importer.cad_zip_importer import check_existing_component
+
 # Import library initializer
 from component_importer.project_library_initializer import initialize_project_libraries
 from component_importer.project_library_initializer import initialize_global_libraries
@@ -445,6 +448,57 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self.log(f"Configuration save error: {error}")
 
+    # Decide how a manual import should treat a component that already exists.
+    #
+    # Returns a (proceed, overwrite) pair:
+    #   (True, False)  the part is new (or the check failed): import normally
+    #   (True, True)   the user confirmed Overwrite: import with skip disabled
+    #   (False, False) the user cancelled: abort without starting a worker
+    #
+    # The existence check and message are produced by the Qt-free shared helper
+    # so the CLI and GUI stay in lockstep. Only the modal itself is Qt.
+    def resolve_overwrite_decision(self, zip_path: str, part_name: str):
+        try:
+            existing = check_existing_component(
+                zip_path=zip_path,
+                project_root=self.config.project_root,
+                library_name=self.config.library_name,
+                part_name=part_name,
+            )
+        except Exception as error:
+            # A failed pre-check must not block the import; the worker will
+            # surface any real problem with the ZIP itself.
+            self.log(f"Overwrite check skipped: {error}")
+            return True, False
+
+        if not existing.get("already_exists", False):
+            return True, False
+
+        if not self.confirm_overwrite_dialog(existing["message"]):
+            self.log(f"Import cancelled: {part_name} already in library.")
+            return False, False
+
+        return True, True
+
+    # Show the modal overwrite confirmation and return True to overwrite.
+    #
+    # Cancel is the default button. The "Overwrite" button is the standard Ok
+    # button relabeled, so exec() returns a StandardButton value that tests can
+    # monkeypatch without inspecting the concrete button object.
+    def confirm_overwrite_dialog(self, message: str) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle("Component already exists")
+        box.setWindowIcon(self.app_icon)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(message)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok
+        )
+        box.button(QMessageBox.StandardButton.Ok).setText("Overwrite")
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+
+        return box.exec() == QMessageBox.StandardButton.Ok
+
     # Run the interactive pin-layout editor on the GUI thread and return a
     # predetermined-layout strategy, or None to import without reconstruction.
     #
@@ -523,11 +577,27 @@ class MainWindow(QMainWindow):
             self.log(f"Import busy. Queued: {part_name}")
             return
 
-        # Interactive pin layout runs on the GUI thread before the worker starts.
-        # Only the manual Import button triggers it, never background auto-import.
+        # Overwrite confirmation and interactive pin layout are both manual-only.
+        # Background auto-import stays silent: it never opens a modal and never
+        # reconstructs pins, keeping today's skip-existing behavior. This is the
+        # explicit code-path split that guarantees auto-import is non-interactive.
+        skip_existing_components = True
         formatting_strategy = None
 
         if not auto_import:
+            # Ask about overwriting an existing part before doing anything else.
+            proceed, overwrite = self.resolve_overwrite_decision(
+                zip_path, part_name
+            )
+
+            # Cancel aborts the whole import: no worker is started.
+            if not proceed:
+                return
+
+            if overwrite:
+                skip_existing_components = False
+
+            # The interactive editor only runs after the overwrite choice.
             formatting_strategy = self.resolve_interactive_strategy(
                 zip_path, part_name
             )
@@ -545,6 +615,7 @@ class MainWindow(QMainWindow):
             part_name,
             self.config,
             formatting_strategy=formatting_strategy,
+            skip_existing_components=skip_existing_components,
         )
 
         # Move worker to thread

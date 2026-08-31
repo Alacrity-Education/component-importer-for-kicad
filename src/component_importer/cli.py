@@ -10,6 +10,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from component_importer.cad_zip_importer import check_existing_component
 from component_importer.cad_zip_importer import import_cad_zip
 from component_importer.file_discovery import iter_zip_files
 from component_importer.gui_config_manager import infer_part_name_from_zip
@@ -28,6 +29,15 @@ CONFIG_FILENAME = ".kicad-importer"
 
 # INI section holding the importer settings
 CONFIG_SECTION = "kicad-importer"
+
+# Per-ZIP outcome of attempt_import.
+#   IMPORT_OK        the component was imported (eligible for --delete)
+#   IMPORT_CANCELLED the user declined to overwrite an existing part; the ZIP is
+#                    kept and never deleted, but this still counts as success
+#   IMPORT_FAILED    the import raised an error
+IMPORT_OK = "imported"
+IMPORT_CANCELLED = "cancelled"
+IMPORT_FAILED = "failed"
 
 
 # Print an error message to stderr
@@ -242,7 +252,32 @@ def pick_zip_file(candidates: list[Path], cwd: Path) -> Path | None:
     return builtin_picker(candidates, cwd)
 
 
-# Import a single ZIP, printing progress and returning success as a boolean
+# Ask the user whether to overwrite an existing part. Returns True to overwrite.
+#
+# --yes overwrites without asking. A non-interactive stdin never blocks: it is
+# treated as "no" (keep the part) with a note, so scripts and pipelines do not
+# hang waiting for input.
+def confirm_overwrite(part_name: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        print(f"  Overwriting {part_name} (--yes).")
+        return True
+
+    if not sys.stdin.isatty():
+        warn(
+            f"stdin is not a terminal; keeping {part_name} "
+            f"(pass --yes to overwrite existing parts)"
+        )
+        return False
+
+    try:
+        answer = input("Overwrite? [y/N] ").strip().lower()
+    except EOFError:
+        return False
+
+    return answer in ("y", "yes")
+
+
+# Import a single ZIP, printing progress and returning an IMPORT_* status
 def attempt_import(
     zip_path: Path,
     project_root: Path,
@@ -250,11 +285,30 @@ def attempt_import(
     debug: bool = False,
     show_summary: bool = True,
     interactive: bool = False,
-) -> bool:
+    assume_yes: bool = False,
+) -> str:
     print(f"Importing {zip_path.name} ...")
 
     try:
         part_name = infer_part_name_from_zip(zip_path)
+
+        # Pre-check existence so the user can confirm an overwrite before any
+        # files are touched. Uses the same Qt-free helper as the GUI modal.
+        overwrite = False
+        existing = check_existing_component(
+            zip_path=zip_path,
+            project_root=project_root,
+            library_name=library,
+            part_name=part_name,
+        )
+
+        if existing.get("already_exists"):
+            print(f"  {existing['message']}")
+            overwrite = confirm_overwrite(part_name, assume_yes)
+
+            if not overwrite:
+                print(f"  Cancelled: {part_name} left unchanged")
+                return IMPORT_CANCELLED
 
         if interactive:
             # Reconstruct pin layouts interactively; an explicit formatting
@@ -268,6 +322,7 @@ def attempt_import(
                 project_root,
                 library,
                 part_name,
+                skip_existing_components=not overwrite,
                 formatting_strategy=InteractiveReconstructionStrategy(),
             )
         else:
@@ -276,6 +331,7 @@ def attempt_import(
                 project_root,
                 library,
                 part_name,
+                skip_existing_components=not overwrite,
                 # Default KiCad-style formatting with theme-adaptive colors
                 symbol_style=SymbolStyle(),
             )
@@ -285,11 +341,14 @@ def attempt_import(
 
         error(f"{zip_path.name}: {exc}")
         print(f"  FAILED: {zip_path.name}")
-        return False
+        return IMPORT_FAILED
 
+    # The pre-check normally handles existing parts; a skipped_existing result
+    # here only happens on a race (the part appeared after the check). Report it
+    # gracefully rather than treating it as an error.
     if result.get("skipped_existing"):
         print(f"  OK: {part_name} already in library, skipped")
-        return True
+        return IMPORT_OK
 
     validation = validate_imported_part(project_root, result, library)
 
@@ -302,7 +361,7 @@ def attempt_import(
         warn(f"validation reported issues for {part_name}")
 
     print(f"  OK: {part_name}")
-    return True
+    return IMPORT_OK
 
 
 # Delete a source ZIP and report it
@@ -395,33 +454,47 @@ def import_all(args: argparse.Namespace, cwd: Path, project_root: Path, library:
     results = []
 
     for zip_path in candidates:
-        ok = attempt_import(
+        status = attempt_import(
             zip_path,
             project_root,
             library,
             debug=args.debug,
             show_summary=False,
             interactive=getattr(args, "interactive", False),
+            assume_yes=getattr(args, "yes", False),
         )
-        results.append((zip_path, ok))
+        results.append((zip_path, status))
 
-    failures = [zip_path for zip_path, ok in results if not ok]
+    imported = [zip_path for zip_path, status in results if status == IMPORT_OK]
+    cancelled = [
+        zip_path for zip_path, status in results if status == IMPORT_CANCELLED
+    ]
+    failures = [zip_path for zip_path, status in results if status == IMPORT_FAILED]
 
     print()
     print(
-        f"Imported {len(candidates) - len(failures)} of {len(candidates)} "
-        f"component ZIP(s)."
+        f"Imported {len(imported)} of {len(candidates)} component ZIP(s)."
     )
 
+    if cancelled:
+        print(
+            f"Kept {len(cancelled)} already-in-library ZIP(s) that were not "
+            f"overwritten."
+        )
+
     if args.delete:
+        # A user-cancelled overwrite is not a failure, so it never blocks the
+        # delete phase; it only excludes its own ZIP from deletion. A real
+        # failure still skips deletion entirely so nothing is lost.
         if failures:
             print(
                 f"{len(failures)} of {len(candidates)} imports failed "
                 f"— skipping deletion of imported zips"
             )
         else:
-            for zip_path, _ in results:
-                delete_zip(zip_path)
+            for zip_path, status in results:
+                if status == IMPORT_OK:
+                    delete_zip(zip_path)
 
     return 1 if failures else 0
 
@@ -482,18 +555,20 @@ def cmd_import(args: argparse.Namespace, cwd: Path) -> int:
             print("Nothing selected.")
             return 0
 
-    ok = attempt_import(
+    status = attempt_import(
         target,
         project_root,
         library,
         debug=args.debug,
         interactive=getattr(args, "interactive", False),
+        assume_yes=getattr(args, "yes", False),
     )
 
-    if not ok:
+    if status == IMPORT_FAILED:
         return 1
 
-    if args.delete:
+    # A cancelled overwrite counts as success but keeps its ZIP in place
+    if args.delete and status == IMPORT_OK:
         delete_zip(target)
 
     return 0
@@ -551,6 +626,12 @@ def build_parser() -> argparse.ArgumentParser:
         "-i",
         action="store_true",
         help="Reconstruct each symbol's pin layout in an interactive editor.",
+    )
+    import_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Overwrite existing parts without prompting.",
     )
 
     return parser

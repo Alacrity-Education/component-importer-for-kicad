@@ -320,7 +320,9 @@ def verify_component_hashes(
     library_path = Path(library_path)
     footprint_dir = Path(footprint_dir)
 
-    # Default everything to unknown
+    # Default everything to unknown. Every failure below is deliberately
+    # swallowed and left as "unknown" so a missing, empty, malformed, or
+    # otherwise unreadable metadata file never crashes the overwrite flow.
     result = {"symbol": "unknown", "footprints": "unknown"}
 
     # Read metadata, returning all-unknown on any read/parse failure
@@ -329,40 +331,52 @@ def verify_component_hashes(
     except (OSError, ValueError):
         return result
 
-    # Verify the symbol hash if metadata carries one
-    stored_symbol_hash = metadata.get("symbol_hash")
-    symbol_name = metadata.get("symbol_name")
-    if stored_symbol_hash and symbol_name:
-        current_symbol_hash = hash_symbol_in_library(library_path, symbol_name)
+    # Metadata that is not a JSON object cannot carry usable hashes
+    if not isinstance(metadata, dict):
+        return result
 
-        # Missing symbol/library stays unknown
-        if current_symbol_hash is None:
-            result["symbol"] = "unknown"
-        elif current_symbol_hash == stored_symbol_hash:
-            result["symbol"] = "match"
-        else:
-            result["symbol"] = "differs"
+    # Verify the symbol hash if metadata carries one; any surprise stays unknown
+    try:
+        stored_symbol_hash = metadata.get("symbol_hash")
+        symbol_name = metadata.get("symbol_name")
 
-    # Verify footprint hashes if metadata carries any
-    footprint_hashes = metadata.get("footprint_hashes")
-    if footprint_hashes:
-        # Collect a status for each stored footprint
-        statuses = []
-        for footprint_name, stored_hash in footprint_hashes.items():
-            # Build the expected footprint path
-            footprint_path = footprint_dir / f"{footprint_name}.kicad_mod"
+        if stored_symbol_hash and isinstance(symbol_name, str) and symbol_name:
+            current_symbol_hash = hash_symbol_in_library(library_path, symbol_name)
 
-            # Missing file is unknown
-            if not footprint_path.exists():
-                statuses.append("unknown")
-                continue
+            # Missing symbol/library stays unknown
+            if current_symbol_hash is None:
+                result["symbol"] = "unknown"
+            elif current_symbol_hash == stored_symbol_hash:
+                result["symbol"] = "match"
+            else:
+                result["symbol"] = "differs"
+    except Exception:
+        result["symbol"] = "unknown"
 
-            # Compare current hash against the stored hash
-            current_hash = hash_footprint_file(footprint_path)
-            statuses.append("match" if current_hash == stored_hash else "differs")
+    # Verify footprint hashes if metadata carries any; any surprise stays unknown
+    try:
+        footprint_hashes = metadata.get("footprint_hashes")
 
-        # Reduce per-footprint statuses to one overall status
-        result["footprints"] = _combine_statuses(statuses)
+        if isinstance(footprint_hashes, dict) and footprint_hashes:
+            # Collect a status for each stored footprint
+            statuses = []
+            for footprint_name, stored_hash in footprint_hashes.items():
+                # Build the expected footprint path
+                footprint_path = footprint_dir / f"{footprint_name}.kicad_mod"
+
+                # Missing file is unknown
+                if not footprint_path.exists():
+                    statuses.append("unknown")
+                    continue
+
+                # Compare current hash against the stored hash
+                current_hash = hash_footprint_file(footprint_path)
+                statuses.append("match" if current_hash == stored_hash else "differs")
+
+            # Reduce per-footprint statuses to one overall status
+            result["footprints"] = _combine_statuses(statuses)
+    except Exception:
+        result["footprints"] = "unknown"
 
     # Return the verification result
     return result

@@ -43,6 +43,9 @@ from component_importer.symbol_library_manager import merge_symbol_library_conte
 # Import content-hash helpers used to fingerprint the imported symbol and footprints
 from component_importer.content_hash import hash_symbol_in_library, hash_footprint_file
 
+# Import the verification helper used by the overwrite-confirmation pre-check
+from component_importer.content_hash import verify_component_hashes
+
 # Import symbol formatting strategies used to rewrite imported symbols
 from component_importer.formatting_strategy import NoOpFormattingStrategy
 from component_importer.formatting_strategy import strategy_from_symbol_style
@@ -247,6 +250,113 @@ def detect_existing_component(zf: ZipFile, assets: list, paths: dict) -> dict:
             for footprint_target in footprint_targets
             if footprint_target.exists()
         ],
+    }
+
+
+# Build the shared overwrite-confirmation message used by the CLI and the GUI.
+#
+# verification is the dict returned by verify_component_hashes:
+#   {"symbol": "match"|"differs"|"unknown", "footprints": <same>}.
+#
+# "unknown" means the stored hashes could not be read or verified (missing,
+# malformed, or hash-less metadata). Because we cannot prove the asset is still
+# untouched, an "unknown" state is reported to the user as "modified" exactly
+# like a real "differs". Only an asset that verifies as "match" is treated as
+# unchanged and contributes no sentence. When both assets match, only the base
+# message is returned.
+def build_overwrite_message(part_name: str, verification: dict | None) -> str:
+    # Base sentence shown whenever the component already exists
+    base = f"{part_name} already exists in the library."
+
+    # Normalize a missing verification result to an empty mapping
+    verification = verification or {}
+
+    # An asset is treated as unchanged only when it verifies as a proven match.
+    # Every other state ("differs", "unknown", or absent) counts as modified so
+    # the user is always warned when we cannot prove the asset is untouched.
+    symbol_modified = verification.get("symbol") != "match"
+    footprint_modified = verification.get("footprints") != "match"
+
+    # Pick the matching modification sentence, if any
+    if symbol_modified and footprint_modified:
+        detail = "The Symbol and Footprint have been modified since it was imported."
+    elif symbol_modified:
+        detail = "The Symbol has been modified since it was imported."
+    elif footprint_modified:
+        detail = "The Footprint has been modified since it was imported."
+    else:
+        return base
+
+    return f"{base} {detail}"
+
+
+# Qt-free pre-import check shared by the CLI overwrite prompt and the GUI
+# overwrite modal. It reports whether the part already exists in the configured
+# project library and, if so, whether its symbol/footprints were modified since
+# they were imported, along with a ready-to-show confirmation message.
+#
+# This mirrors the name/layout normalization import_cad_zip performs so the
+# existence check and metadata lookup target the exact same on-disk files. It
+# never raises on unreadable metadata: verify_component_hashes maps any failure
+# to "unknown", which build_overwrite_message renders as "modified".
+def check_existing_component(
+    zip_path: str | Path,
+    project_root: str | Path,
+    library_name: str,
+    part_name: str,
+    symbol_library_name: str | None = None,
+    footprint_library_name: str | None = None,
+    library_layout: str = "project",
+) -> dict:
+    # Convert paths and clean the part name the same way import_cad_zip does
+    zip_path = Path(zip_path)
+    project_root = Path(project_root)
+    part_name = safe_filename(part_name)
+
+    # Fall back to the shared library name when specific names are not provided
+    if symbol_library_name is None:
+        symbol_library_name = library_name
+
+    if footprint_library_name is None:
+        footprint_library_name = library_name
+
+    # Use KiCad-safe library names/nicknames like the importer
+    library_name = make_library_nickname(library_name)
+    symbol_library_name = make_library_nickname(symbol_library_name)
+    footprint_library_name = make_library_nickname(footprint_library_name)
+
+    # Resolve the same target paths the import would use (idempotent mkdirs)
+    paths = create_project_library_structure(
+        project_root=project_root,
+        library_name=library_name,
+        symbol_library_name=symbol_library_name,
+        footprint_library_name=footprint_library_name,
+        layout=library_layout,
+    )
+
+    # Scan the ZIP and detect whether its primary assets are already present
+    assets = scan_cad_zip(zip_path)
+
+    with ZipFile(zip_path, "r") as zf:
+        existing = detect_existing_component(zf=zf, assets=assets, paths=paths)
+
+    already_exists = bool(existing.get("already_exists", False))
+
+    # Only verify hashes when the component already exists
+    verification = {"symbol": "unknown", "footprints": "unknown"}
+
+    if already_exists:
+        metadata_path = paths["metadata_dir"] / f"{part_name}_import_metadata.json"
+        verification = verify_component_hashes(
+            metadata_path=metadata_path,
+            library_path=paths["symbol_lib_path"],
+            footprint_dir=paths["footprint_lib_dir"],
+        )
+
+    return {
+        "already_exists": already_exists,
+        "verification": verification,
+        "message": build_overwrite_message(part_name, verification),
     }
 
 

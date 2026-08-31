@@ -7,7 +7,7 @@ Download a ZIP, type one command, and the part is in your project library.
 
 ```
 kicad-importer init [--library NAME] [--downloads PATH]
-kicad-importer import [FILE] [--all|-a] [--delete|-d] [--interactive|-i] [--debug]
+kicad-importer import [FILE] [--all|-a] [--delete|-d] [--interactive|-i] [--yes|-y] [--debug]
 ```
 
 # Project workflow
@@ -115,9 +115,41 @@ For each part, the importer:
 6. keeps a copy of the original ZIP in `libraries/source_zips/`, and
 7. validates the result and prints a summary.
 
-If the component is already in the library, the importer notices, tells you
-`already in library, skipped`, and moves on. Importing the same ZIP twice
-is harmless.
+## Re-importing a part that is already in the library
+
+If the component is already in the library, the importer stops before touching
+any files and asks what to do:
+
+```
+Importing ul_TPS631000DRLR.zip ...
+  TPS631000DRLR already exists in the library. The Symbol has been modified since it was imported.
+Overwrite? [y/N]
+```
+
+The first line always says the part already exists. When the importer can tell
+that the copy in your library was edited since it was first imported, it adds a
+sentence naming what changed: the Symbol, the Footprint, or both. It works this
+out by comparing content fingerprints stored at import time against what is on
+disk now, so cosmetic reformatting does not count as a change. If the import
+metadata is missing or unreadable (for example a part imported by an older
+version), it cannot prove the copy is untouched and reports both the Symbol and
+Footprint as modified so you are never overwritten by surprise.
+
+Answer `y` to overwrite the existing symbol, footprint and 3D model with the
+ones from the ZIP. Anything else (the default) cancels that part and leaves it
+exactly as it is. A cancelled part still counts as a success: the command exits
+0 and, with `--delete`, the ZIP is kept rather than removed.
+
+Pass `--yes` (or `-y`) to overwrite every existing part without asking:
+
+```bash
+kicad-importer import ul_TPS631000DRLR.zip --yes
+```
+
+When the command is run without a terminal (for example from a script or a
+pipe) and `--yes` is not given, it never waits for input: it treats the answer
+as "no", keeps the existing part, and prints a note. Use `--yes` to overwrite
+non-interactively.
 
 ## Bulk imports: `--all`
 
@@ -140,6 +172,14 @@ final report:
 The exit code is 0 only if every candidate imported cleanly, so `--all` is
 safe to use in scripts.
 
+Parts that are already in the library are prompted for one at a time, just like
+a single import. Add `--yes` to overwrite all of them without prompting, which
+is what you usually want in a script:
+
+```bash
+kicad-importer import --all --yes
+```
+
 Append `--delete` to the import command to also delete the imported zips, so they are not
 present in the next bulk import invocation.
 
@@ -147,6 +187,11 @@ present in the next bulk import invocation.
 kicad-importer import ul_TPS631000DRLR.zip --delete
 kicad-importer import --all --delete
 ```
+
+Cancelling an overwrite is not a failure, so it never blocks `--delete` for the
+rest of the batch: a cancelled part simply keeps its own ZIP, while the parts
+that did import are still deleted. A real import failure is different - it skips
+the entire delete phase so nothing is lost.
 
 ## Interactive pin layout: `--interactive` / `-i`
 
@@ -189,4 +234,5 @@ edge, and the symbol's properties and footprint links are preserved. With
 | Browse and pick a part | `kicad-importer import` |
 | Import everything here | `kicad-importer import --all` |
 | …and tidy up the ZIPs | `kicad-importer import --all --delete` |
+| Overwrite an existing part without asking | `kicad-importer import <file.zip> --yes` |
 | Rework pin layout on import | `kicad-importer import <file.zip> --interactive` |

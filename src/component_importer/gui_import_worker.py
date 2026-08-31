@@ -90,7 +90,14 @@ class ImportComponentWorker(QObject):
     failed = pyqtSignal(str)
 
     # Create worker
-    def __init__(self, zip_path: str, part_name: str, config, formatting_strategy=None):
+    def __init__(
+        self,
+        zip_path: str,
+        part_name: str,
+        config,
+        formatting_strategy=None,
+        skip_existing_components: bool = True,
+    ):
         # Initialize QObject
         super().__init__()
 
@@ -108,6 +115,11 @@ class ImportComponentWorker(QObject):
         # symbol_style; when None the classic style from config is used.
         self.formatting_strategy = formatting_strategy
 
+        # When False, an existing component is overwritten instead of skipped.
+        # The GUI sets this to False only after the user confirms the overwrite
+        # modal on the manual import path; auto-import always leaves it True.
+        self.skip_existing_components = skip_existing_components
+
     # Run import operation
     def run(self) -> None:
         try:
@@ -124,7 +136,7 @@ class ImportComponentWorker(QObject):
                 part_name=self.part_name,
                 footprint_filter_mode="exact",
                 create_backups=True,
-                skip_existing_components=True,
+                skip_existing_components=self.skip_existing_components,
                 symbol_style=build_symbol_style_from_config(self.config),
                 formatting_strategy=self.formatting_strategy,
             )
@@ -172,7 +184,7 @@ class ImportComponentWorker(QObject):
                     part_name=self.part_name,
                     footprint_filter_mode="exact",
                     create_backups=True,
-                    skip_existing_components=True,
+                    skip_existing_components=self.skip_existing_components,
                     symbol_style=build_symbol_style_from_config(self.config),
                     formatting_strategy=self.formatting_strategy,
                     update_library_tables=False,
