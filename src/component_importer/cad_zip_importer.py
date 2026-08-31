@@ -40,6 +40,9 @@ from component_importer.symbol_footprint_linker import find_symbol_blocks
 # Import symbol library merge helper
 from component_importer.symbol_library_manager import merge_symbol_library_content_into_target
 
+# Import content-hash helpers used to fingerprint the imported symbol and footprints
+from component_importer.content_hash import hash_symbol_in_library, hash_footprint_file
+
 # Import symbol formatting strategies used to rewrite imported symbols
 from component_importer.formatting_strategy import NoOpFormattingStrategy
 from component_importer.formatting_strategy import strategy_from_symbol_style
@@ -649,6 +652,41 @@ def import_cad_zip(
             symbol_library_paths=imported["symbol_libraries"],
         )
 
+    # Compute content hashes reflecting the FINAL on-disk state of the imported
+    # symbol and footprints (after styling, linking and 3D path fixes). These
+    # let a later import detect whether the user edited them in the library.
+
+    # Collect every symbol name merged during this import
+    merged_symbol_names = []
+    for merge_result in imported["merged_symbols"]:
+        merged_symbol_names.extend(merge_result.get("merged_symbol_names", []))
+    merged_symbol_names = [
+        name for name in dict.fromkeys(merged_symbol_names) if name
+    ]
+
+    # Pick the primary symbol to fingerprint, preferring the imported part name
+    hashed_symbol_name = None
+    if merged_symbol_names:
+        hashed_symbol_name = merged_symbol_names[0]
+        for name in merged_symbol_names:
+            if name == part_name or name.lower() == part_name.lower():
+                hashed_symbol_name = name
+                break
+
+    # Hash the primary symbol as it now exists in the target library
+    symbol_hash = None
+    if hashed_symbol_name:
+        symbol_hash = hash_symbol_in_library(
+            library_path=paths["symbol_lib_path"],
+            symbol_name=hashed_symbol_name,
+        )
+
+    # Hash every imported footprint file, keyed by footprint name
+    footprint_hashes = {}
+    for footprint_file in imported["footprints"]:
+        footprint_path = Path(footprint_file)
+        footprint_hashes[footprint_path.stem] = hash_footprint_file(footprint_path)
+
     # Create metadata about this import
     metadata = {
         "part_name": part_name,
@@ -659,6 +697,9 @@ def import_cad_zip(
         "source_zip": str(zip_path),
         "imported_at": datetime.now().isoformat(timespec="seconds"),
         "imported_assets": imported,
+        "symbol_name": hashed_symbol_name,
+        "symbol_hash": symbol_hash,
+        "footprint_hashes": footprint_hashes,
     }
 
     # Decide where to save metadata JSON
